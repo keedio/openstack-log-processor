@@ -21,11 +21,11 @@ under the License.
 	<modelVersion>4.0.0</modelVersion>
 	
 	<groupId>com.keedio.flink</groupId>
-	<artifactId>flink-kafka-consumer</artifactId>
+	<artifactId>openStack-log-processor</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
-	<name>Flink Kafka consumer</name>
+	<name>OpenStack log processor</name>
 	<url>http://www.keedio.com</url>
 
 	<properties>
@@ -100,6 +100,17 @@ under the License.
             <version>${flink.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-cassandra_2.10</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.dropwizard.metrics</groupId>
+            <artifactId>metrics-core</artifactId>
+            <version>3.1.2</version>
+        </dependency>
+
 		<!-- explicitly add a standard loggin framework, as Flink does not (in the future) have
 			a hard dependency on one specific framework by default -->
 		<dependency>
@@ -113,71 +124,46 @@ under the License.
 			<version>${log4j.version}</version>
 		</dependency>
 	</dependencies>
-
-    <!--<profiles>-->
-        <!--<profile>-->
-            <!--&lt;!&ndash; Profile for packaging correct JAR files &ndash;&gt;-->
-            <!--<id>build-jar</id>-->
-
-            <!--<activation>-->
-                <!--<activeByDefault>true</activeByDefault>-->
-            <!--</activation>-->
-
-            <!--<dependencies>-->
-                 <!--<dependency>-->
-                    <!--<groupId>org.apache.flink</groupId>-->
-                    <!--<artifactId>flink-clients_2.10</artifactId>-->
-                    <!--<version>${flink.version}</version>-->
-                    <!--<scope>provided</scope>-->
-                <!--</dependency>-->
-                <!--<dependency>-->
-                    <!--<groupId>org.slf4j</groupId>-->
-                    <!--<artifactId>slf4j-log4j12</artifactId>-->
-                    <!--<version>${slf4j.version}</version>-->
-                    <!--<scope>provided</scope>-->
-                <!--</dependency>-->
-                <!--<dependency>-->
-                    <!--<groupId>log4j</groupId>-->
-                    <!--<artifactId>log4j</artifactId>-->
-                    <!--<version>${log4j.version}</version>-->
-                    <!--<scope>provided</scope>-->
-                <!--</dependency>-->
-                <!--<dependency>-->
-                    <!--<groupId>org.apache.flink</groupId>-->
-                    <!--<artifactId>flink-cep-scala_2.10</artifactId>-->
-                    <!--<version>${flink.version}</version>-->
-                <!--</dependency>-->
-
-                <!--<dependency>-->
-                    <!--<groupId>org.apache.flink</groupId>-->
-                    <!--<artifactId>flink-connector-kafka-0.10_2.10</artifactId>-->
-                    <!--<version>${flink.version}</version>-->
-                <!--</dependency>-->
-            <!--</dependencies>-->
-
-            <!--<build>-->
-                <!--<plugins>-->
-                    <!--&lt;!&ndash; disable the exclusion rules &ndash;&gt;-->
-                    <!--<plugin>-->
-                        <!--<groupId>org.apache.maven.plugins</groupId>-->
-                        <!--<artifactId>maven-shade-plugin</artifactId>-->
-                        <!--<version>2.4.1</version>-->
-                        <!--<executions>-->
-                            <!--<execution>-->
-                                <!--<phase>package</phase>-->
-                                <!--<goals>-->
-                                    <!--<goal>shade</goal>-->
-                                <!--</goals>-->
-                                <!--<configuration>-->
-                                    <!--<artifactSet>-->
-                                        <!--<excludes combine.self="override"></excludes>-->
-                                    <!--</artifactSet>-->
-                                <!--</configuration>-->
-                            <!--</execution>-->
-                        <!--</executions>-->
-                    <!--</plugin>-->
-                <!--</plugins>-->
-            <!--</build>-->
-        <!--</profile>-->
-    <!--</profiles>-->
-</project>
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+        </resources>
+        <plugins>
+            <plugin>
+                <groupId>net.alchim31.maven</groupId>
+                <artifactId>scala-maven-plugin</artifactId>
+                <version>3.2.0</version>
+                <configuration>
+                    <recompileMode>incremental</recompileMode>
+                    <javacArgs>
+                        <javacArg>-Xlint:unchecked</javacArg>
+                        <javacArg>-Xlint:deprecation</javacArg>
+                    </javacArgs>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>compile</goal>
+                            <goal>testCompile</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>2.3</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+    </project>

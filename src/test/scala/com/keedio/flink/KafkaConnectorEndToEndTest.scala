@@ -1,17 +1,17 @@
 package com.keedio.flink
 
 import org.apache.flink.api.java.utils.ParameterTool
-import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
-import org.apache.flink.streaming.connectors.kafka._
-import org.apache.flink.streaming.util.serialization._
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer08
+import org.apache.flink.streaming.util.serialization.SimpleStringSchema
+import org.apache.flink.api.scala.createTypeInformation
 
 /**
-  * Created by luislazaro on 8/2/17.
+  * Created by luislazaro on 11/2/17.
   * lalazaro@keedio.com
   * Keedio
   */
-object KafkaLogProcessor {
+object KafkaConnectorEndToEndTest {
   def main(args: Array[String]): Unit = {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
     val parameterTool = ParameterTool.fromArgs(args);
