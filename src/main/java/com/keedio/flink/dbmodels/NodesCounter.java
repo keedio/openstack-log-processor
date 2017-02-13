@@ -12,7 +12,7 @@ import java.io.Serializable;
  * Keedio
  */
 
-@Table(keyspace = "redhatpoc", name = "cassandraconnectorexample")
+@Table(keyspace = "redhatpoc", name = "counters_nodes_test")
 public class NodesCounter implements Serializable {
 
     @Column(name = "id")
@@ -88,5 +88,17 @@ public class NodesCounter implements Serializable {
 
     public void setTs(String ts) {
         this.ts = ts;
+    }
+
+    @Override
+    public String toString() {
+        return "NodesCounter{" +
+                "id='" + id + '\'' +
+                ", loglevel='" + loglevel + '\'' +
+                ", az='" + az + '\'' +
+                ", region='" + region + '\'' +
+                ", node_type='" + node_type + '\'' +
+                ", ts='" + ts + '\'' +
+                '}';
     }
 }

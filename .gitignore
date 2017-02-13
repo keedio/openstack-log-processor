@@ -105,4 +105,4 @@ Temporary Items
 /.idea/
 /target/
 /dependency-reduced-pom.xml
-/flink-kafka-consumer.iml
+/OpenStack-log-processor.iml

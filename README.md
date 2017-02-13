@@ -1,4 +1,4 @@
-## Flink consumer for Kafka
+## OpenStack Log Processor
 Flink app for processing event streams served by Apache Kafka
 
 ### Usage
