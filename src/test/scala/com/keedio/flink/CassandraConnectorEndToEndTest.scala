@@ -35,9 +35,10 @@ object CassandraConnectorEndToEndTest {
     val source: DataStream[PojoSampleJava] = env.fromCollection(list)
 
     CassandraSink.addSink(source.javaStream)
-      .setClusterBuilder(new ClusterBuilder() {
+        .setClusterBuilder(new ClusterBuilder() {
         override def buildCluster(builder: Builder): Cluster = {
-          builder.addContactPoint("192.168.2.110").build()
+          builder.addContactPoint("192.168.2.110")
+            .build()
         }
       })
       .build()

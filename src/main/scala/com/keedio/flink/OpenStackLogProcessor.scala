@@ -3,7 +3,7 @@ package com.keedio.flink
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.utils.UUIDs
-import com.keedio.flink.dbmodels._
+import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
@@ -26,7 +26,7 @@ object OpenStackLogProcessor {
     //requerir rebalance para que hay sink unamed (no confundir con cassandra sink)
     //stream.rebalance.print
 
-    val parsedStreamNC: DataStream[NodesCounter] = stream.map(string => {
+    val parsedStreamNC: DataStream[Tuple6[String, String, String, String, String, String]] = stream.map(string => {
       val keyAndVal = string.split("root:")
 
       var columns: Array[String] = Array()
@@ -37,12 +37,12 @@ object OpenStackLogProcessor {
       } catch {
         case e: ArrayIndexOutOfBoundsException => println("Cannot parse string: no loglevel info? ------------------------> " + string)
       }
-      new NodesCounter("1h", logLevel, "az1", "boston", "compute", UUIDs.timeBased().toString)
+      new Tuple6("1h", logLevel, "az1", "boston", "compute", UUIDs.timeBased().toString)
     })
 
-  parsedStreamNC.map(nodecounter => println(nodecounter.toString))
+    parsedStreamNC.map(t => println(t.toString))
 
-    val source: DataStream[NodesCounter] = parsedStreamNC.filter(nodesCounter => nodesCounter.getLoglevel match {
+    val source: DataStream[Tuple6[String, String, String, String, String, String]] = parsedStreamNC.filter(t => t.f1 match {
       case "INFO" => true
       case "ERROR" => true
       case "WARNING" => true
@@ -53,6 +53,7 @@ object OpenStackLogProcessor {
 
     //sink cassandra
     CassandraSink.addSink(source.javaStream)
+      .setQuery("INSERT INTO redhatpoc.counters_nodes_test (id, loglevel, az, region, node_type, ts) VALUES (?, ?, ?, ?, ?, ?) USING TTL 20;")
       .setClusterBuilder(new ClusterBuilder() {
         override def buildCluster(builder: Builder): Cluster = {
           builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()

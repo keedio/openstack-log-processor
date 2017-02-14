@@ -1,6 +1,7 @@
 package com.keedio.flink.dbmodels;
 
 import com.datastax.driver.mapping.annotations.Column;
+import com.datastax.driver.mapping.annotations.QueryParameters;
 import com.datastax.driver.mapping.annotations.Table;
 
 
