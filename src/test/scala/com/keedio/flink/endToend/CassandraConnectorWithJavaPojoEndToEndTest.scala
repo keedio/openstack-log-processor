@@ -1,7 +1,8 @@
-package com.keedio.flink
+package com.keedio.flink.endToend
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
+import com.keedio.flink.PojoSampleJava
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 
@@ -27,7 +28,7 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
   *  create keyspace IF NOT EXISTS redhatpoc with replication = {'class': 'SimpleStrategy', 'replication_factor': 1};
   *  CREATE TABLE redhatpoc.cassandraconnectorexample (id varchar, text varchar);
   * **/
-object CassandraConnectorEndToEndTest {
+object CassandraConnectorWithJavaPojoEndToEndTest {
   def main(args: Array[String]) {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
 

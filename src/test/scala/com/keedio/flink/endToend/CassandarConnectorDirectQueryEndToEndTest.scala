@@ -1,19 +1,20 @@
-package com.keedio.flink
+package com.keedio.flink.endToend
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
-import collection.JavaConverters._
-import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.api.java.tuple.Tuple2
 import org.apache.flink.streaming.api.datastream.DataStream
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment
+import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
+
+import scala.collection.JavaConverters._
 
 /**
   * Created by luislazaro on 13/2/17.
   * lalazaro@keedio.com
   * Keedio
   */
-object CassandarConnectorEndToEndTest2 {
+object CassandarConnectorDirectQueryEndToEndTest {
   def main(args: Array[String]) {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
 
