@@ -8,6 +8,7 @@ import org.apache.flink.streaming.api.scala.{DataStream, _}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
+import org.apache.log4j.Logger
 
 import scala.collection.Map
 
@@ -16,7 +17,10 @@ import scala.collection.Map
   * lalazaro@keedio.com
   * Keedio
   */
+class OpenStackLogProcessor
+
 object OpenStackLogProcessor {
+  val LOG: Logger = Logger.getLogger(classOf[OpenStackLogProcessor])
 
   def main(args: Array[String]): Unit = {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
@@ -24,6 +28,7 @@ object OpenStackLogProcessor {
     val stream: DataStream[String] = env
       .addSource(new FlinkKafkaConsumer08[String](
         parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
+
 
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
 
@@ -33,10 +38,11 @@ object OpenStackLogProcessor {
     val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
       .map(e => (stringToTuple5(stream, e._1, "az1", "boston", "keystone"), e._2))
 
-    val listStackService: Map[DataStream[Tuple4[String, String, String, String]], Int] = listOfKeys
+    val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
       .map(e => (stringToTuple4(stream, e._1, "boston", "keystone"), e._2))
 
-   //SINKING
+
+    //SINKING
     listNodeCounter.foreach { t => CassandraSink.addSink(t._1.javaStream)
       .setQuery("INSERT INTO redhatpoc.counters_nodes (id, loglevel, az, region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
       .setClusterBuilder(new ClusterBuilder() {
@@ -58,7 +64,7 @@ object OpenStackLogProcessor {
     }
 
     listStackService.foreach { t => CassandraSink.addSink(t._1.javaStream)
-      .setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, service, ts) VALUES (?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
+      .setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, service, ts, timeframe) VALUES (?, ?, ?, ?, now(), ?) USING TTL " + t._2 + ";")
       .setClusterBuilder(new ClusterBuilder() {
         override def buildCluster(builder: Builder): Cluster = {
           builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
@@ -67,7 +73,6 @@ object OpenStackLogProcessor {
       .build()
     }
 
-    //source.javaStream.rebalance().print
     env.execute()
 
   }
@@ -86,17 +91,17 @@ object OpenStackLogProcessor {
     * @param exp
     * @return
     */
-  def getLogLevelFromString(s: String, exp: String = ""): String = {
-    var logLevel: String = ""
+  def getFieldFromString(s: String, exp: String = "", position: Int): String = {
+    var requiredValue: String = ""
     try {
-      logLevel = exp match {
-        case "" => s.split("\\s+")(3)
-        case _ => s.split(exp)(1).split("\\s+")(4)
+      requiredValue = exp match {
+        case "" => s.split("\\s+")(position)
+        case _ => s.split(exp)(1).trim.split("\\s+")(position)
       }
     } catch {
-      case e: ArrayIndexOutOfBoundsException => println("Cannot parse string: no loglevel info? ------------------------> " + s)
+      case e: ArrayIndexOutOfBoundsException => LOG.error("Cannot parse string: does line contains loglevel infor or timestamp?? " + s)
     }
-    logLevel
+    requiredValue
   }
 
   /**
@@ -114,7 +119,7 @@ object OpenStackLogProcessor {
   DataStream[Tuple5[String, String, String, String, String]] = {
     stream
       .map(string => {
-        val logLevel: String = getLogLevelFromString(string, "root:")
+        val logLevel: String = getFieldFromString(string, "root:", 3)
         new Tuple5(timeKey, logLevel, az, region, node_service)
       })
       .filter(t => t.f1 match {
@@ -126,18 +131,38 @@ object OpenStackLogProcessor {
   }
 
   def stringToTuple4(stream: DataStream[String], timeKey: String, region: String, node_service: String):
-  DataStream[Tuple4[String, String, String, String]] = {
+  DataStream[Tuple5[String, String, String, String, Int]] = {
     stream
       .map(string => {
-        val logLevel: String = getLogLevelFromString(string, "root:")
-        new Tuple4(timeKey, logLevel, region, node_service)
+        val logLevel: String = getFieldFromString(string, "root:", 3)
+        val pieceTime: String = getFieldFromString(string, "root:", 1)
+        val timeframe: Int = getMinutesFromTimePieceLogLine(pieceTime)
+        new Tuple5(timeKey, region, logLevel, node_service, timeframe)
       })
-      .filter(t => t.f1 match {
+      .filter(t => t.f2 match {
         case "INFO" => true
         case "ERROR" => true
         case "WARNING" => true
         case _ => false
       })
+  }
+
+  /**
+    * Get minutes from time token in syslog
+    * 09:40 == 09*60 + 40
+    * @param pieceTime
+    * @return
+    */
+  def getMinutesFromTimePieceLogLine(pieceTime: String): Int = {
+    var pieceHour = 0
+    var pieceMinute = 0
+    try {
+      pieceHour = pieceTime.split(":")(0).toInt * 60
+      pieceMinute = pieceTime.split(":")(1).toInt
+    } catch {
+      case e: NumberFormatException => LOG.error("string cannot be cast to Integer: " + pieceTime)
+    }
+    pieceHour + pieceMinute
   }
 
 }
