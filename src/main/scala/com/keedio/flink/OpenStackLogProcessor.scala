@@ -31,16 +31,6 @@ object OpenStackLogProcessor {
       .addSource(new FlinkKafkaConsumer08[String](
         parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
 
-
-//    val stream: DataStream[String] = stream0.map(s => {
-//      var aux = ""
-//      try {
-//        aux = s.split("root:")(1).trim
-//      } catch {
-//        case e: ArrayIndexOutOfBoundsException => LOG.error("Cannot split string by pattern " + s)
-//      }
-//      aux
-//    })
     //val streamOfLogs: DataStream[LogEntry] = stream.map(string => new LogEntry(string, Seq("date", "time", "pid", "loglevel")))
 
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
@@ -230,8 +220,8 @@ object OpenStackLogProcessor {
       pieceHour = pieceTime.split(":")(0).toInt * 60
       pieceMinute = pieceTime.split(":")(1).toInt
     } catch {
-      case e: NumberFormatException => LOG.error("!>>>>>>>>>>>>>>>>>>>>>>>>>>>> string cannot be cast to Integer: " + pieceTime)
-      case e: ArrayIndexOutOfBoundsException => LOG.error("!>>>>>>>>>>>>>>>>>>>>>>>>>>>> malformed piece of time : " + pieceTime)
+      case e: NumberFormatException => LOG.warn("String cannot be cast to Integer: " + pieceTime)
+      case e: ArrayIndexOutOfBoundsException => LOG.warn("Malformed piece of time : " + pieceTime)
     }
     pieceHour + pieceMinute
   }

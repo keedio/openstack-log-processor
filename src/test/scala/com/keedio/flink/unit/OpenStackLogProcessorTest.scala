@@ -49,10 +49,13 @@ class OpenStackLogProcessorTest {
   @Test
   def testUseOfLogEntry() = {
     val lineOfLog = "2017-02-09 11:34:54.275 8348 INFO keystone.common.wsgi [-] POST http://192.168.0.20:5000/v2.0/tokens"
-    val fields = Seq("date", "time", "pid", "loglevel")
-    val logEntry = new LogEntry(lineOfLog, fields)
+    val fields = Seq("date", "time", "pid", "loglevel", "service")
+    val logEntry = new LogEntry(lineOfLog, fields, " ")
     Assert.assertEquals(logEntry.valuesMap("date"), "2017-02-09")
     Assert.assertEquals(logEntry.valuesMap("time"), "11:34:54.275")
+    Assert.assertEquals(logEntry.valuesMap("service"), "keystone.common.wsgi")
+    Assert.assertEquals(logEntry.valuesMap("remainingLog"), "[-] POST http://192.168.0.20:5000/v2.0/tokens" )
+
 
   }
 
