@@ -1,5 +1,7 @@
 package com.keedio.flink
 
+import java.sql.Timestamp
+
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import org.apache.flink.api.java.tuple._
@@ -29,17 +31,20 @@ object OpenStackLogProcessor {
       .addSource(new FlinkKafkaConsumer08[String](
         parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
 
+    //val streamOfLogs: DataStream[LogEntry] = stream.map(string => new LogEntry(string, Seq("date", "time", "pid", "loglevel")))
 
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
 
     val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (stringToTuple5(stream, e._1, "az1", "boston", "compute"), e._2))
+      .map(e => (stringToTupleNC(stream, e._1, "az1", "boston", "compute"), e._2))
 
     val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (stringToTuple5(stream, e._1, "az1", "boston", "keystone"), e._2))
+      .map(e => (stringToTupleSC(stream, e._1, "az1", "boston"), e._2))
 
     val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
-      .map(e => (stringToTuple4(stream, e._1, "boston", "keystone"), e._2))
+      .map(e => (stringToTupleSS(stream, e._1, "boston"), e._2))
+
+    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston", "compute")
 
 
     //SINKING
@@ -73,6 +78,16 @@ object OpenStackLogProcessor {
       .build()
     }
 
+    CassandraSink.addSink(rawLog.javaStream)
+      .setQuery("INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) VALUES (?, ?, ?, ?, ?, ?, ?);")
+      .setClusterBuilder(new ClusterBuilder() {
+        override def buildCluster(builder: Builder): Cluster = {
+          builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+        }
+      })
+      .build()
+
+
     env.execute()
 
   }
@@ -94,12 +109,9 @@ object OpenStackLogProcessor {
   def getFieldFromString(s: String, exp: String = "", position: Int): String = {
     var requiredValue: String = ""
     try {
-      requiredValue = exp match {
-        case "" => s.split("\\s+")(position)
-        case _ => s.split(exp)(1).trim.split("\\s+")(position)
-      }
+      requiredValue = s.trim.split("\\s+")(position)
     } catch {
-      case e: ArrayIndexOutOfBoundsException => LOG.error("Cannot parse string: does line contains loglevel infor or timestamp?? " + s)
+      case e: ArrayIndexOutOfBoundsException => LOG.error("Cannot parse string: does line contains loglevel info or timestamp? " + s)
     }
     requiredValue
   }
@@ -111,16 +123,14 @@ object OpenStackLogProcessor {
     * @param timeKey
     * @param az
     * @param region
-    * @param node_service
+    * @param node
     * @return
     */
-
-  def stringToTuple5(stream: DataStream[String], timeKey: String, az: String, region: String, node_service: String):
-  DataStream[Tuple5[String, String, String, String, String]] = {
+  def stringToTupleNC(stream: DataStream[String], timeKey: String, az: String, region: String, node: String): DataStream[Tuple5[String, String, String, String, String]] = {
     stream
       .map(string => {
-        val logLevel: String = getFieldFromString(string, "root:", 3)
-        new Tuple5(timeKey, logLevel, az, region, node_service)
+        val logLevel: String = getFieldFromString(string, "", 3)
+        new Tuple5(timeKey, logLevel, az, region, node)
       })
       .filter(t => t.f1 match {
         case "INFO" => true
@@ -130,14 +140,35 @@ object OpenStackLogProcessor {
       })
   }
 
-  def stringToTuple4(stream: DataStream[String], timeKey: String, region: String, node_service: String):
-  DataStream[Tuple5[String, String, String, String, Int]] = {
+  def stringToTupleSC(stream: DataStream[String], timeKey: String, az: String, region: String): DataStream[Tuple5[String, String, String, String, String]] = {
     stream
       .map(string => {
-        val logLevel: String = getFieldFromString(string, "root:", 3)
-        val pieceTime: String = getFieldFromString(string, "root:", 1)
+        val logLevel: String = getFieldFromString(string, "", 3)
+        val service: String = getFieldFromString(string, "", 4) match {
+          case "" => "keystone"
+          case _ => getFieldFromString(string, "", 4)
+        }
+        new Tuple5(timeKey, logLevel, az, region, service)
+      })
+      .filter(t => t.f1 match {
+        case "INFO" => true
+        case "ERROR" => true
+        case "WARNING" => true
+        case _ => false
+      })
+  }
+
+  def stringToTupleSS(stream: DataStream[String], timeKey: String, region: String): DataStream[Tuple5[String, String, String, String, Int]] = {
+    stream
+      .map(string => {
+        val logLevel: String = getFieldFromString(string, "", 3)
+        val pieceTime: String = getFieldFromString(string, "", 1)
         val timeframe: Int = getMinutesFromTimePieceLogLine(pieceTime)
-        new Tuple5(timeKey, region, logLevel, node_service, timeframe)
+        val service: String = getFieldFromString(string, "", 4) match {
+          case "" => "keystone"
+          case _ => getFieldFromString(string, "root:", 4)
+        }
+        new Tuple5(timeKey, region, logLevel, service, timeframe)
       })
       .filter(t => t.f2 match {
         case "INFO" => true
@@ -147,9 +178,38 @@ object OpenStackLogProcessor {
       })
   }
 
+  def stringToTupleRL(stream: DataStream[String], region: String, node_type: String): DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = {
+    stream
+      .map(string => {
+        val logLevel: String = getFieldFromString(string, "", 3)
+        val pieceDate: String = getFieldFromString(string, "", 0)
+        val service: String = getFieldFromString(string, "", 4) match {
+          case "" => "keystone"
+          case _ => getFieldFromString(string, "", 4)
+        }
+        val stringtimestamp: String = new String(getFieldFromString(string, "", 0) + " " + getFieldFromString(string, "", 1))
+        var log_ts = new Timestamp(0L)
+        try {
+          log_ts = Timestamp.valueOf(stringtimestamp)
+        } catch {
+          case e: IllegalArgumentException => LOG.info("cannot create timestamp from string " + stringtimestamp)
+        }
+        val payload = string
+        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, payload)
+      })
+      .filter(t => t.f2 match {
+        case "INFO" => true
+        case "ERROR" => true
+        case "WARNING" => true
+        case _ => false
+      })
+  }
+
+
   /**
     * Get minutes from time token in syslog
     * 09:40 == 09*60 + 40
+    *
     * @param pieceTime
     * @return
     */
@@ -160,7 +220,8 @@ object OpenStackLogProcessor {
       pieceHour = pieceTime.split(":")(0).toInt * 60
       pieceMinute = pieceTime.split(":")(1).toInt
     } catch {
-      case e: NumberFormatException => LOG.error("string cannot be cast to Integer: " + pieceTime)
+      case e: NumberFormatException => LOG.warn("String cannot be cast to Integer: " + pieceTime)
+      case e: ArrayIndexOutOfBoundsException => LOG.warn("Malformed piece of time : " + pieceTime)
     }
     pieceHour + pieceMinute
   }
