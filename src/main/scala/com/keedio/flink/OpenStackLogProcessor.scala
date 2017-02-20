@@ -36,7 +36,7 @@ object OpenStackLogProcessor {
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
 
     val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (stringToTupleNC(stream, e._1, "az1", "boston", "compute"), e._2))
+      .map(e => (stringToTupleNC(stream, e._1, "az1", "boston"), e._2))
 
     val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
       .map(e => (stringToTupleSC(stream, e._1, "az1", "boston"), e._2))
@@ -44,7 +44,7 @@ object OpenStackLogProcessor {
     val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
       .map(e => (stringToTupleSS(stream, e._1, "boston"), e._2))
 
-    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston", "compute")
+    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston")
 
 
     //SINKING
@@ -123,13 +123,14 @@ object OpenStackLogProcessor {
     * @param timeKey
     * @param az
     * @param region
-    * @param node
+    *
     * @return
     */
-  def stringToTupleNC(stream: DataStream[String], timeKey: String, az: String, region: String, node: String): DataStream[Tuple5[String, String, String, String, String]] = {
+  def stringToTupleNC(stream: DataStream[String], timeKey: String, az: String, region: String): DataStream[Tuple5[String, String, String, String, String]] = {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
+        val node = generateRandomNodeType
         new Tuple5(timeKey, logLevel, az, region, node)
       })
       .filter(t => t.f1 match {
@@ -144,10 +145,11 @@ object OpenStackLogProcessor {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
-        val service: String = getFieldFromString(string, "", 4) match {
-          case "" => "keystone"
-          case _ => getFieldFromString(string, "", 4)
-        }
+//        val service: String = getFieldFromString(string, "", 4) match {
+//          case "" => "keystone"
+//          case _ => getFieldFromString(string, "", 4)
+//        }
+        val service = generateRandomService
         new Tuple5(timeKey, logLevel, az, region, service)
       })
       .filter(t => t.f1 match {
@@ -164,10 +166,11 @@ object OpenStackLogProcessor {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceTime: String = getFieldFromString(string, "", 1)
         val timeframe: Int = getMinutesFromTimePieceLogLine(pieceTime)
-        val service: String = getFieldFromString(string, "", 4) match {
-          case "" => "keystone"
-          case _ => getFieldFromString(string, "root:", 4)
-        }
+//        val service: String = getFieldFromString(string, "", 4) match {
+//          case "" => "keystone"
+//          case _ => getFieldFromString(string, "root:", 4)
+//        }
+        val service = generateRandomService
         new Tuple5(timeKey, region, logLevel, service, timeframe)
       })
       .filter(t => t.f2 match {
@@ -178,15 +181,17 @@ object OpenStackLogProcessor {
       })
   }
 
-  def stringToTupleRL(stream: DataStream[String], region: String, node_type: String): DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = {
+  def stringToTupleRL(stream: DataStream[String], region: String): DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceDate: String = getFieldFromString(string, "", 0)
-        val service: String = getFieldFromString(string, "", 4) match {
-          case "" => "keystone"
-          case _ => getFieldFromString(string, "", 4)
-        }
+//        val service: String = getFieldFromString(string, "", 4) match {
+//          case "" => "keystone"
+//          case _ => getFieldFromString(string, "", 4)
+//        }
+        val service = generateRandomService
+        val node_type = generateRandomNodeType
         val stringtimestamp: String = new String(getFieldFromString(string, "", 0) + " " + getFieldFromString(string, "", 1))
         var log_ts = new Timestamp(0L)
         try {
@@ -224,6 +229,38 @@ object OpenStackLogProcessor {
       case e: ArrayIndexOutOfBoundsException => LOG.warn("Malformed piece of time : " + pieceTime)
     }
     pieceHour + pieceMinute
+  }
+
+  /**
+    * Only for poc
+    */
+  def generateRandomService: String = {
+    val servicesMap = Map(
+      0 -> "Nova",
+      1 -> "Keystone",
+      2 -> "Pacemaker",
+      3 -> "Neutron",
+      4 -> "Storage",
+      5 -> "Cinder",
+      6 -> "Glance",
+      7 -> "Swift"
+    )
+    val rand = scala.util.Random
+    val randKey = rand.nextInt(7)
+    servicesMap(randKey)
+  }
+
+  /**
+    * Only for poc
+    */
+  def generateRandomNodeType: String = {
+    val servicesMap = Map(
+      0 -> "compute",
+       1 -> "storage"
+    )
+    val rand = scala.util.Random
+    val randKey = rand.nextInt(1)
+    servicesMap(randKey)
   }
 
 }
