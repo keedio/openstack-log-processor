@@ -11,6 +11,7 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
+import org.joda.time.{DateTime, DateTimeZone}
 
 import scala.collection.Map
 
@@ -42,7 +43,7 @@ object OpenStackLogProcessor {
       .map(e => (stringToTupleSC(stream, e._1, "az1", "boston"), e._2))
 
     val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
-      .map(e => (stringToTupleSS(stream, e._1, "boston"), e._2))
+      .map(e => (stringToTupleSS(stream, e._1, e._2, "boston"), e._2))
 
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston")
 
@@ -160,16 +161,12 @@ object OpenStackLogProcessor {
       })
   }
 
-  def stringToTupleSS(stream: DataStream[String], timeKey: String, region: String): DataStream[Tuple5[String, String, String, String, Int]] = {
+  def stringToTupleSS(stream: DataStream[String], timeKey: String, valKey: Int, region: String): DataStream[Tuple5[String, String, String, String, Int]] = {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceTime: String = getFieldFromString(string, "", 1)
         val timeframe: Int = getMinutesFromTimePieceLogLine(pieceTime)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "root:", 4)
-//        }
         val service = generateRandomService
         new Tuple5(timeKey, region, logLevel, service, timeframe)
       })
@@ -179,6 +176,7 @@ object OpenStackLogProcessor {
         case "WARNING" => true
         case _ => false
       })
+      .filter(t => isValidTimeFrame(t.f4, valKey))
   }
 
   def stringToTupleRL(stream: DataStream[String], region: String): DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = {
@@ -261,6 +259,20 @@ object OpenStackLogProcessor {
     val rand = scala.util.Random
     val randKey = rand.nextInt(1)
     servicesMap(randKey)
+  }
+
+  /**
+    * Function for checking timeframe validity. Timeframe is right if
+    * belongs stritctly to interval Now - range_hour.
+    * @param timeframe
+    * @param valKey
+    * @return
+    */
+  def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
+    val timeframeSeconds: Int = timeframe * 60
+    val now: DateTime = DateTime.now(DateTimeZone.UTC)
+    val nowSeconds: Int =  now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
+    timeframeSeconds > (nowSeconds - valKey)
   }
 
 }
