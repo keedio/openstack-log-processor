@@ -1,11 +1,13 @@
 package com.keedio.flink
 
 import java.sql.Timestamp
+import java.util.Calendar
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
+import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment}
 import org.apache.flink.streaming.api.scala.{DataStream, _}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
@@ -33,6 +35,13 @@ object OpenStackLogProcessor {
 
     //val streamOfLogs: DataStream[LogEntry] = stream.map(string => new LogEntry(string, Seq("date", "time", "pid", "loglevel")))
 
+    //Load tables:
+    val envBatch = ExecutionEnvironment.getExecutionEnvironment
+    val tablesLoaded: DataSet[String] = envBatch.readTextFile("./src/main/resources/tables/tables.csv")
+    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size -1):_*))
+
+
+
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
 
     val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
@@ -42,7 +51,7 @@ object OpenStackLogProcessor {
       .map(e => (stringToTupleSC(stream, e._1, "az1", "boston"), e._2))
 
     val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
-      .map(e => (stringToTupleSS(stream, e._1, "boston"), e._2))
+      .map(e => (stringToTupleSS(stream, e._1, e._2, "boston"), e._2))
 
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston")
 
@@ -160,16 +169,12 @@ object OpenStackLogProcessor {
       })
   }
 
-  def stringToTupleSS(stream: DataStream[String], timeKey: String, region: String): DataStream[Tuple5[String, String, String, String, Int]] = {
+  def stringToTupleSS(stream: DataStream[String], timeKey: String, valKey: Int, region: String): DataStream[Tuple5[String, String, String, String, Int]] = {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceTime: String = getFieldFromString(string, "", 1)
         val timeframe: Int = getMinutesFromTimePieceLogLine(pieceTime)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "root:", 4)
-//        }
         val service = generateRandomService
         new Tuple5(timeKey, region, logLevel, service, timeframe)
       })
@@ -179,6 +184,7 @@ object OpenStackLogProcessor {
         case "WARNING" => true
         case _ => false
       })
+      .filter(t => isValidTimeFrame(t.f4, valKey))
   }
 
   def stringToTupleRL(stream: DataStream[String], region: String): DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = {
@@ -262,5 +268,13 @@ object OpenStackLogProcessor {
     val randKey = rand.nextInt(1)
     servicesMap(randKey)
   }
+
+  def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
+    val timeframeSeconds: Int = timeframe * 60
+    val now: Calendar = Calendar.getInstance()
+    val nowSeconds: Int =  now.get(Calendar.HOUR) * 3600 + now.get(Calendar.MINUTE) * 60 + now.get(Calendar.SECOND)
+    timeframeSeconds > (nowSeconds - valKey)
+    }
+
 
 }

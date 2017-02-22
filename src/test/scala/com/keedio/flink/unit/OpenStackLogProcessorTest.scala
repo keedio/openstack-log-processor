@@ -3,7 +3,9 @@ package com.keedio.flink.unit
 import java.sql.Timestamp
 import java.util.concurrent.TimeUnit
 
-import com.keedio.flink.{LogEntry, OpenStackLogProcessor}
+import com.keedio.flink.{DbTable, LogEntry, OpenStackLogProcessor}
+import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment}
+import org.apache.flink.api.scala.createTypeInformation
 import org.junit.{Assert, Test}
 
 
@@ -55,8 +57,21 @@ class OpenStackLogProcessorTest {
     Assert.assertEquals(logEntry.valuesMap("time"), "11:34:54.275")
     Assert.assertEquals(logEntry.valuesMap("service"), "keystone.common.wsgi")
     Assert.assertEquals(logEntry.valuesMap("remainingLog"), "[-] POST http://192.168.0.20:5000/v2.0/tokens" )
+  }
 
+  @Test
+  def testUserOfreadCsvFileFromBatchEnvironment() = {
+    val envBatch = ExecutionEnvironment.getExecutionEnvironment
+    val tablesLoaded: DataSet[String] = envBatch.readTextFile("./src/main/resources/tables/tables.csv")
+    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size -1):_*))
+    val a = datasetTables.map(Assert.assertNotNull(_))
+  }
 
+  @Test
+  def testUseOfReadFileOfPrimitives() = {
+    val envBatch = ExecutionEnvironment.getExecutionEnvironment
+    val b: DataSet[_<:Any] = envBatch.readFileOfPrimitives[String]("./src/main/resources/types/types")
+    b.rebalance().print
   }
 
 }
