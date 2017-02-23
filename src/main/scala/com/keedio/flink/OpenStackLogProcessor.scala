@@ -1,7 +1,6 @@
 package com.keedio.flink
 
 import java.sql.Timestamp
-import java.util.Calendar
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
@@ -13,6 +12,7 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
+import org.joda.time.{DateTime, DateTimeZone}
 
 import scala.collection.Map
 
@@ -269,12 +269,19 @@ object OpenStackLogProcessor {
     servicesMap(randKey)
   }
 
+  /**
+    * Function for checking timeframe validity. Timeframe is right if
+    * belongs stritctly to interval Now - range_hour.
+    * @param timeframe
+    * @param valKey
+    * @return
+    */
   def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
     val timeframeSeconds: Int = timeframe * 60
-    val now: Calendar = Calendar.getInstance()
-    val nowSeconds: Int =  now.get(Calendar.HOUR) * 3600 + now.get(Calendar.MINUTE) * 60 + now.get(Calendar.SECOND)
+    val now: DateTime = DateTime.now(DateTimeZone.UTC)
+    val nowSeconds: Int =  now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
     timeframeSeconds > (nowSeconds - valKey)
-    }
+  }
 
 
 }

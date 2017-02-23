@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import com.keedio.flink.{DbTable, LogEntry, OpenStackLogProcessor}
 import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment}
 import org.apache.flink.api.scala.createTypeInformation
+import org.joda.time.DateTime
 import org.junit.{Assert, Test}
 
 
@@ -56,22 +57,48 @@ class OpenStackLogProcessorTest {
     Assert.assertEquals(logEntry.valuesMap("date"), "2017-02-09")
     Assert.assertEquals(logEntry.valuesMap("time"), "11:34:54.275")
     Assert.assertEquals(logEntry.valuesMap("service"), "keystone.common.wsgi")
-    Assert.assertEquals(logEntry.valuesMap("remainingLog"), "[-] POST http://192.168.0.20:5000/v2.0/tokens" )
+    Assert.assertEquals(logEntry.valuesMap("remainingLog"), "[-] POST http://192.168.0.20:5000/v2.0/tokens")
   }
 
   @Test
   def testUserOfreadCsvFileFromBatchEnvironment() = {
     val envBatch = ExecutionEnvironment.getExecutionEnvironment
     val tablesLoaded: DataSet[String] = envBatch.readTextFile("./src/main/resources/tables/tables.csv")
-    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size -1):_*))
+    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size - 1): _*))
     val a = datasetTables.map(Assert.assertNotNull(_))
   }
 
   @Test
   def testUseOfReadFileOfPrimitives() = {
     val envBatch = ExecutionEnvironment.getExecutionEnvironment
-    val b: DataSet[_<:Any] = envBatch.readFileOfPrimitives[String]("./src/main/resources/types/types")
-    b.rebalance().print
+    val b: DataSet[_ <: Any] = envBatch.readFileOfPrimitives[String]("./src/main/resources/types/types")
+  }
+
+  @Test
+  def testForIsvalidTimeFrame() = {
+    //val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
+    //12:01
+    val now: DateTime = new DateTime(2017, 2, 22, 12, 1)
+    val timeframeSeconds_5amclock: Int = 5 * 60 * 60
+    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
+    //timeframe is invalid (05:00 AM)
+    Assert.assertFalse(timeframeSeconds_5amclock > (nowSeconds - 3600))
+    Assert.assertFalse(timeframeSeconds_5amclock > (nowSeconds - 21600))
+    //timeframe is valid
+    Assert.assertTrue(timeframeSeconds_5amclock > (nowSeconds - 43200))
+    Assert.assertTrue(timeframeSeconds_5amclock > (nowSeconds - 86400))
+    Assert.assertTrue(timeframeSeconds_5amclock > (nowSeconds - 604800))
+    Assert.assertTrue(timeframeSeconds_5amclock > (nowSeconds - 2419200))
+
+    val timeframeSeconds_16PMclock: Int = 16 * 60 * 60
+    //timeframe is valid (16:00 AM)
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 3600))
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 21600))
+    //timeframe is valid
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 43200))
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 86400))
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 604800))
+    Assert.assertTrue(timeframeSeconds_16PMclock > (nowSeconds - 2419200))
   }
 
 }
