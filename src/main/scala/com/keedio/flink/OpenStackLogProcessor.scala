@@ -12,7 +12,7 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
-import org.joda.time.{DateTime, DateTimeZone}
+import org.joda.time.DateTime
 
 import scala.collection.Map
 
@@ -38,7 +38,7 @@ object OpenStackLogProcessor {
     //Load tables:
     val envBatch = ExecutionEnvironment.getExecutionEnvironment
     val tablesLoaded: DataSet[String] = envBatch.readTextFile("./src/main/resources/tables/tables.csv")
-    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size -1):_*))
+    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size - 1): _*))
 
 
 
@@ -132,7 +132,6 @@ object OpenStackLogProcessor {
     * @param timeKey
     * @param az
     * @param region
-    *
     * @return
     */
   def stringToTupleNC(stream: DataStream[String], timeKey: String, az: String, region: String): DataStream[Tuple5[String, String, String, String, String]] = {
@@ -154,10 +153,10 @@ object OpenStackLogProcessor {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "", 4)
-//        }
+        //        val service: String = getFieldFromString(string, "", 4) match {
+        //          case "" => "keystone"
+        //          case _ => getFieldFromString(string, "", 4)
+        //        }
         val service = generateRandomService
         new Tuple5(timeKey, logLevel, az, region, service)
       })
@@ -192,10 +191,10 @@ object OpenStackLogProcessor {
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceDate: String = getFieldFromString(string, "", 0)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "", 4)
-//        }
+        //        val service: String = getFieldFromString(string, "", 4) match {
+        //          case "" => "keystone"
+        //          case _ => getFieldFromString(string, "", 4)
+        //        }
         val service = generateRandomService
         val node_type = generateRandomNodeType
         val stringtimestamp: String = new String(getFieldFromString(string, "", 0) + " " + getFieldFromString(string, "", 1))
@@ -262,7 +261,7 @@ object OpenStackLogProcessor {
   def generateRandomNodeType: String = {
     val servicesMap = Map(
       0 -> "compute",
-       1 -> "storage"
+      1 -> "storage"
     )
     val rand = scala.util.Random
     val randKey = rand.nextInt(1)
@@ -270,17 +269,33 @@ object OpenStackLogProcessor {
   }
 
   /**
-    * Function for checking timeframe validity. Timeframe is right if
-    * belongs stritctly to interval Now - range_hour.
+    * Se trata de validar la hora impresa en el log frente a un rango de horas al que debe pertenecer.
+    * El rango de horas es {1h, 6h, 12h, 24h, 1w, 1m}. Cada uno de estos valores es en segundos el valkey.
+    * El timeframe es la hora del log multiplicada por 60 minutos.
+    * La hora de un log es válida para un valor del rango de horas, si la diferencia temporal entre la hora
+    * del log y la actualiadad pertenece al intervalo que el valor del rango de horas limita.
+    * Ejemplo:
+    * - si en la actualidad son las 15:00 y el log tiene el sello de las 08:00, la diferencia temporal es de
+    * 15 - 8 = 7 horas, por lo tanto el rango de horas al que pertenece es cualquiera menos 1h, 6h , ya que es superior
+    * en magnitud a esos valores.
+    * - si en la actualidad son las 15:00 y el log tiene el sello de las 17:00, la diferencia temporal es de
+    * 24 - 17 + 15 = 22 horas, por lo tanto el rango de horas al que pertenece es cualquiera menos 1h, 6h, 12h, ya que es
+    * superior en magnitud a esos valores.
+    *
+    * Aunque uno de los argumentos es DateTime, no se espera que el usuario de la función proporcione la fecha.
+    * El uso parametrizado del argumento tiempo es exclusivamente para el testeo de la función.
+    *
     * @param timeframe
     * @param valKey
     * @return
     */
-  def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
+  def isValidTimeFrame(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
     val timeframeSeconds: Int = timeframe * 60
-    val now: DateTime = DateTime.now(DateTimeZone.UTC)
-    val nowSeconds: Int =  now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
-    timeframeSeconds > (nowSeconds - valKey)
+    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
+    timeframeSeconds <= nowSeconds match {
+      case true => (nowSeconds - timeframeSeconds) <= valKey
+      case false => (24 * 60 * 60) - timeframeSeconds + nowSeconds <= valKey
+    }
   }
 
 
