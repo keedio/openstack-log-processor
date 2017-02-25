@@ -19,12 +19,12 @@ import java.io.IOException;
 
 /**
  * Instanciar clase y arrancar.
- * Exceptions at the end of the class with cassandra-unit-spring witll be launched
+ * Exceptions at the end of the class with cassandra-unit witll be launched:
  * ERROR com.datastax.driver.core.ControlConnection - [Control connection] Cannot
  * connect to any host, scheduling retry in 2000 milliseconds
  * The error has no impact on the test results.
  *
- * @see(http://github.com/jsevellec/cassandra-unit/issues/98)
+ *  @see(http://github.com/jsevellec/cassandra-unit/issues/98)
  */
 public class EmbeddedCassandraServer {
     private Session session;

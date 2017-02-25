@@ -1,0 +1,4 @@
+2016-04-19 18:22:08.376 7517 INFO neutron.wsgi [req-63a2d89b-687c-4fe8-ab8f-dcc4da3085c7 ] 192.168.0.20 - - [19/Apr/2016 18:22:08] "GET /v2.0/ports.json?device_id=bcbac30f-30aa-4390-aa51-d7cafc58ecaa HTTP/1.1" 200 960 0.047981
+2016-01-18 13:21:28.547 8966 ERROR migrate.versioning.api [-] 29 -> 30...
+2017-02-10 06:47:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: 142a0f7a3b154a16be18f9c97aa3f426
+2016-04-19 21:00:48.076 7517 TRACE neutron.wsgi [req-24b06feb-95ae-4ec9-87e0-d961b71c4ca0 ] 192.168.0.20 - - [19/Apr/2016 18:27:48] "GET /v2.0/vpn/vpnservices.json HTTP/1.1" 404 266 0.096258

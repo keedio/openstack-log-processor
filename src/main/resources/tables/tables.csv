@@ -1,4 +1,0 @@
-redhatpoc.counters_nodes;id;region;az;loglevel;node_type;ts
-redhatpoc.counters_services;id;region;az;loglevel;service;ts
-redhatpoc.stack_services;id;region;loglevel;service;timeframe;ts
-redhatpoc.raw_logs;date;region;loglevel;service;node_type;log_ts;timestamp;payload

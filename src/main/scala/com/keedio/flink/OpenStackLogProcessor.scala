@@ -269,21 +269,15 @@ object OpenStackLogProcessor {
   }
 
   /**
-    * Se trata de validar la hora impresa en el log frente a un rango de horas al que debe pertenecer.
-    * El rango de horas es {1h, 6h, 12h, 24h, 1w, 1m}. Cada uno de estos valores es en segundos el valkey.
-    * El timeframe es la hora del log multiplicada por 60 minutos.
-    * La hora de un log es válida para un valor del rango de horas, si la diferencia temporal entre la hora
-    * del log y la actualiadad pertenece al intervalo que el valor del rango de horas limita.
-    * Ejemplo:
-    * - si en la actualidad son las 15:00 y el log tiene el sello de las 08:00, la diferencia temporal es de
-    * 15 - 8 = 7 horas, por lo tanto el rango de horas al que pertenece es cualquiera menos 1h, 6h , ya que es superior
-    * en magnitud a esos valores.
-    * - si en la actualidad son las 15:00 y el log tiene el sello de las 17:00, la diferencia temporal es de
-    * 24 - 17 + 15 = 22 horas, por lo tanto el rango de horas al que pertenece es cualquiera menos 1h, 6h, 12h, ya que es
-    * superior en magnitud a esos valores.
-    *
-    * Aunque uno de los argumentos es DateTime, no se espera que el usuario de la función proporcione la fecha.
-    * El uso parametrizado del argumento tiempo es exclusivamente para el testeo de la función.
+    * The intention is to validate the log printed hour against the hour range they should belong to.
+    * Specifically, if the hour range is  {1h, 6h, 12h, 24h, 1w, 1m}, each of this values but transformated into
+    * seconds units would be the valkey and the “timeframe” then would be the log hour per 60 mins.
+    * One log hour would be valid only if the timeframe between the log hour and current hour is whihin the framework that the “timeframe” field limits
+    * For example:
+    *   -    Current hour is 15:00 and the log is 08:00. Time difference would be 15-8=7 hours, this will render
+    *       that all hour values would be acceptable but 1h and 6 h since this ones are above the range
+    *   -    If current hour is 15:00 and log is 17:00, time difference would be then 24-17+15=22 hours
+    *    in this case the acceptable values would be any but 1h, 6 h and 12h since these ones are abobe the range
     *
     * @param timeframe
     * @param valKey
