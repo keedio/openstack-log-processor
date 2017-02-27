@@ -2,7 +2,7 @@ package com.keedio.flink.endToend
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
-import com.keedio.flink.PojoSampleJava
+import com.keedio.flink.dbmodels.PojoSampleJava
 import org.apache.flink.streaming.api.scala._
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 

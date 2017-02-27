@@ -14,6 +14,7 @@ CREATE TABLE redhatpoc.cassandraconnectorexample(
            service text,
             timeframe int,
              ts timeuuid,
+             tfhours text,
               PRIMARY KEY((id), service, loglevel, region, ts));
 
     CREATE TABLE redhatpoc.raw_logs (

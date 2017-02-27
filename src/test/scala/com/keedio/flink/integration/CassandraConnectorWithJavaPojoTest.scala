@@ -2,7 +2,8 @@ package com.keedio.flink.integration
 
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.{Cluster, ProtocolVersion, ResultSet}
-import com.keedio.flink.{EmbeddedCassandraServer, PojoSampleJava}
+import com.keedio.flink.EmbeddedCassandraServer
+import com.keedio.flink.dbmodels.PojoSampleJava
 import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}

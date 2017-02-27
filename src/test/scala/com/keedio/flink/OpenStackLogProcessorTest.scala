@@ -3,6 +3,7 @@ package com.keedio.flink
 import java.sql.Timestamp
 import java.util.concurrent.TimeUnit
 
+import com.keedio.flink.entities.{DbTable, LogEntry}
 import com.keedio.flink.utils.ProcessorHelper
 import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment, createTypeInformation}
 import org.junit.{Assert, Test}

@@ -4,6 +4,7 @@ import java.sql.Timestamp
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
+import com.datastax.driver.core.exceptions.DriverException
 import com.keedio.flink.utils.{ProcessorHelper, ProcessorHelperPoc}
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
@@ -45,51 +46,65 @@ object OpenStackLogProcessor {
     val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
       .map(e => (stringToTupleSC(stream, e._1, "az1", "boston"), e._2))
 
-    val listStackService: Map[DataStream[Tuple5[String, String, String, String, Int]], Int] = listOfKeys
-      .map(e => (stringToTupleSS(stream, e._1, e._2, "boston"), e._2))
+    val listStackService: Iterable[DataStream[Tuple7[String, String, String, String, Int,String, Int]]] = listOfKeys
+      .map(e => stringToTupleSS(stream, e._1, e._2, "boston"))
 
-    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] = stringToTupleRL(stream, "boston")
+    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =stringToTupleRL(stream, "boston")
 
     //SINKING
     listNodeCounter.foreach { t => {
-      CassandraSink.addSink(t._1.javaStream)
-        .setQuery("INSERT INTO redhatpoc.counters_nodes (id, loglevel, az, region, node_type, ts) VALUES (?, ?, ?, ?," +
-          " " +
-          "?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
-          }
-        })
-        .build()
+      {
+        {
+          CassandraSink.addSink(t._1.javaStream)
+            .setQuery("INSERT INTO redhatpoc.counters_nodes (id, loglevel, az, region, node_type, ts) VALUES (?, ?, " +
+              "?, " +
+              "?," +
+              " " +
+              "?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+              }
+            })
+            .build()
+        }
+      }
     }
     }
 
     listServiceCounter.foreach { t => {
-      CassandraSink.addSink(t._1.javaStream)
-        .setQuery("INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, ?, ?, " +
-          "?, " +
-          "?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
-          }
-        })
-        .build()
+      {
+        {
+          CassandraSink.addSink(t._1.javaStream)
+            .setQuery("INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, ?, " +
+              "?," +
+              " " +
+              "?, " +
+              "?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+              }
+            })
+            .build()
+        }
+      }
     }
     }
 
     listStackService.foreach { t => {
-      CassandraSink.addSink(t._1.javaStream)
-        .setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, service, ts, timeframe) VALUES (?, ?, " +
-          "?," +
-          " ?, now(), ?) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
-          }
-        })
-        .build()
+      {
+        {
+          CassandraSink.addSink(t.javaStream)
+            .setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, service, ts, timeframe, tfHours) VALUES (?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+              }
+            })
+            .build()
+        }
+      }
     }
     }
 
@@ -102,7 +117,13 @@ object OpenStackLogProcessor {
         }
       })
       .build()
+
+    try {
     env.execute()
+  } catch {
+      case e : DriverException => LOG.error("", e)
+    }
+
   }
 
   /**
@@ -155,23 +176,23 @@ object OpenStackLogProcessor {
   }
 
   def stringToTupleSS(stream: DataStream[String], timeKey: String, valKey: Int, region: String):
-  DataStream[Tuple5[String, String, String, String, Int]] = {
+  DataStream[Tuple7[String, String, String, String, Int,String, Int]] = {
     stream
       .map(string => {
-        val logLevel: String = ProcessorHelper.getFieldFromString(string, "", 3)
-        val pieceTime: String = ProcessorHelper.getFieldFromString(string, "", 1)
+        val logLevel: String = ProcessorHelper.getFieldFromString(string, "", 3).trim
+        val pieceTime: String = ProcessorHelper.getFieldFromString(string, "", 1).trim
         val timeframe: Int = ProcessorHelper.getMinutesFromTimePieceLogLine(pieceTime)
         val service = ProcessorHelperPoc.generateRandomService
-        new Tuple5(timeKey, region, logLevel, service, timeframe)
+        val ttl: Int = ProcessorHelper.computeTTL(timeframe, valKey)
+        new Tuple7(timeKey, region, logLevel, service, timeframe,pieceTime,ttl)
       })
-      .filter(t => {
+      .filter(t =>
         t.f2 match {
           case "INFO" => true
           case "ERROR" => true
           case "WARNING" => true
           case _ => false
-        }
-      })
+        })
       .filter(t => ProcessorHelper.isValidTimeFrame(t.f4, valKey))
   }
 

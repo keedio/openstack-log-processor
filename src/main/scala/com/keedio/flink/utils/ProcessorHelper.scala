@@ -1,7 +1,7 @@
 package com.keedio.flink.utils
 
 import org.apache.log4j.Logger
-import org.joda.time.DateTime
+import org.joda.time._
 
 /**
   * Created by luislazaro on 27/2/17.
@@ -32,6 +32,22 @@ object ProcessorHelper {
     timeframeSeconds <= nowSeconds match {
       case true => (nowSeconds - timeframeSeconds) <= valKey
       case false => (24 * 60 * 60) - timeframeSeconds + nowSeconds <= valKey
+    }
+  }
+
+  /**
+    * TTL is computed.
+    * @param timeframe
+    * @param valKey
+    * @param now
+    * @return
+    */
+  def computeTTL(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Int = {
+    val timeframeSeconds: Int = timeframe * 60
+    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
+    timeframeSeconds <= nowSeconds match {
+      case true => valKey - (nowSeconds - timeframeSeconds)
+      case false => valKey - ((24 * 60 * 60) - timeframeSeconds + nowSeconds)
     }
   }
 
@@ -77,4 +93,25 @@ object ProcessorHelper {
     }
     requiredValue
   }
+
+  /**
+    * Auxiliar function for creation a Joda.Period object parsing the date and time
+    * from string log.
+    * Assumption: '2017-02-10 18:22:08.376' is always the first token from standard syslog.
+    * @param string
+    * @return
+    */
+  def buildDateTimeFromFieldsLog(string: String): DateTime = {
+    val pieceDate = ProcessorHelper.getFieldFromString(string, "", 0).trim
+    val year = pieceDate.split("-")(0).toInt
+    val month = pieceDate.split("-")(1).toInt
+    val day = pieceDate.split("-")(2).toInt
+    val pieceTime: String = ProcessorHelper.getFieldFromString(string, "", 1).trim
+    val hour = pieceTime.split(":")(0).toInt
+    val minute = pieceTime.split(":")(1).toInt
+    val seconds = pieceTime.split(":")(2).split("\\.")(0).toInt
+    val mseconds = pieceTime.split(":")(2).split("\\.")(1).toInt
+    new DateTime(year, month, day, hour, minute, seconds, mseconds)
+  }
+
 }
