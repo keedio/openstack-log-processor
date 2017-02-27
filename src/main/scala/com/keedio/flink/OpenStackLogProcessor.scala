@@ -6,12 +6,17 @@ import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
+import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment}
 import org.apache.flink.streaming.api.scala.{DataStream, _}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
+<<<<<<< HEAD
 import org.joda.time.{DateTime, DateTimeZone}
+=======
+import org.joda.time.DateTime
+>>>>>>> feature/add-entity-table
 
 import scala.collection.Map
 
@@ -33,6 +38,13 @@ object OpenStackLogProcessor {
         parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
 
     //val streamOfLogs: DataStream[LogEntry] = stream.map(string => new LogEntry(string, Seq("date", "time", "pid", "loglevel")))
+
+    //Load tables:
+    val envBatch = ExecutionEnvironment.getExecutionEnvironment
+    val tablesLoaded: DataSet[String] = envBatch.readTextFile("./src/main/resources/tables/tables.csv")
+    val datasetTables: DataSet[DbTable] = tablesLoaded.map(s => new DbTable(s.split(";")(0), s.split(";").slice(1, s.size - 1): _*))
+
+
 
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" -> 604800, "1m" -> 2419200)
 
@@ -124,7 +136,6 @@ object OpenStackLogProcessor {
     * @param timeKey
     * @param az
     * @param region
-    *
     * @return
     */
   def stringToTupleNC(stream: DataStream[String], timeKey: String, az: String, region: String): DataStream[Tuple5[String, String, String, String, String]] = {
@@ -146,10 +157,10 @@ object OpenStackLogProcessor {
     stream
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "", 4)
-//        }
+        //        val service: String = getFieldFromString(string, "", 4) match {
+        //          case "" => "keystone"
+        //          case _ => getFieldFromString(string, "", 4)
+        //        }
         val service = generateRandomService
         new Tuple5(timeKey, logLevel, az, region, service)
       })
@@ -184,10 +195,10 @@ object OpenStackLogProcessor {
       .map(string => {
         val logLevel: String = getFieldFromString(string, "", 3)
         val pieceDate: String = getFieldFromString(string, "", 0)
-//        val service: String = getFieldFromString(string, "", 4) match {
-//          case "" => "keystone"
-//          case _ => getFieldFromString(string, "", 4)
-//        }
+        //        val service: String = getFieldFromString(string, "", 4) match {
+        //          case "" => "keystone"
+        //          case _ => getFieldFromString(string, "", 4)
+        //        }
         val service = generateRandomService
         val node_type = generateRandomNodeType
         val stringtimestamp: String = new String(getFieldFromString(string, "", 0) + " " + getFieldFromString(string, "", 1))
@@ -254,7 +265,7 @@ object OpenStackLogProcessor {
   def generateRandomNodeType: String = {
     val servicesMap = Map(
       0 -> "compute",
-       1 -> "storage"
+      1 -> "storage"
     )
     val rand = scala.util.Random
     val randKey = rand.nextInt(1)
@@ -262,12 +273,26 @@ object OpenStackLogProcessor {
   }
 
   /**
+<<<<<<< HEAD
     * Function for checking timeframe validity. Timeframe is right if
     * belongs stritctly to interval Now - range_hour.
+=======
+    * The intention is to validate the log printed hour against the hour range they should belong to.
+    * Specifically, if the hour range is  {1h, 6h, 12h, 24h, 1w, 1m}, each of this values but transformated into
+    * seconds units would be the valkey and the “timeframe” then would be the log hour per 60 mins.
+    * One log hour would be valid only if the timeframe between the log hour and current hour is whihin the framework that the “timeframe” field limits
+    * For example:
+    *   -    Current hour is 15:00 and the log is 08:00. Time difference would be 15-8=7 hours, this will render
+    *       that all hour values would be acceptable but 1h and 6 h since this ones are above the range
+    *   -    If current hour is 15:00 and log is 17:00, time difference would be then 24-17+15=22 hours
+    *    in this case the acceptable values would be any but 1h, 6 h and 12h since these ones are abobe the range
+    *
+>>>>>>> feature/add-entity-table
     * @param timeframe
     * @param valKey
     * @return
     */
+<<<<<<< HEAD
   def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
     val timeframeSeconds: Int = timeframe * 60
     val now: DateTime = DateTime.now(DateTimeZone.UTC)
@@ -275,4 +300,16 @@ object OpenStackLogProcessor {
     timeframeSeconds > (nowSeconds - valKey)
   }
 
+=======
+  def isValidTimeFrame(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
+    val timeframeSeconds: Int = timeframe * 60
+    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
+    timeframeSeconds <= nowSeconds match {
+      case true => (nowSeconds - timeframeSeconds) <= valKey
+      case false => (24 * 60 * 60) - timeframeSeconds + nowSeconds <= valKey
+    }
+  }
+
+
+>>>>>>> feature/add-entity-table
 }
