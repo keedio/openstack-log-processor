@@ -93,16 +93,12 @@ under the License.
             <artifactId>metrics-core</artifactId>
             <version>3.1.2</version>
         </dependency>
-<<<<<<< HEAD
 
-=======
->>>>>>> feature/add-entity-table
         <dependency>
             <groupId>joda-time</groupId>
             <artifactId>joda-time</artifactId>
             <version>2.9.7</version>
         </dependency>
-<<<<<<< HEAD
 
 		<!-- explicitly add a standard loggin framework, as Flink does not (in the future) have
 			a hard dependency on one specific framework by default -->
@@ -116,13 +112,13 @@ under the License.
 			<artifactId>log4j</artifactId>
 			<version>${log4j.version}</version>
 		</dependency>
-=======
+
         <dependency>
             <groupId>com.datastax.cassandra</groupId>
             <artifactId>cassandra-driver-core</artifactId>
             <version>2.1.4</version>
         </dependency>
->>>>>>> feature/add-entity-table
+
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

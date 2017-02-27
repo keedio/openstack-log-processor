@@ -12,11 +12,7 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
-<<<<<<< HEAD
-import org.joda.time.{DateTime, DateTimeZone}
-=======
 import org.joda.time.DateTime
->>>>>>> feature/add-entity-table
 
 import scala.collection.Map
 
@@ -273,10 +269,6 @@ object OpenStackLogProcessor {
   }
 
   /**
-<<<<<<< HEAD
-    * Function for checking timeframe validity. Timeframe is right if
-    * belongs stritctly to interval Now - range_hour.
-=======
     * The intention is to validate the log printed hour against the hour range they should belong to.
     * Specifically, if the hour range is  {1h, 6h, 12h, 24h, 1w, 1m}, each of this values but transformated into
     * seconds units would be the valkey and the “timeframe” then would be the log hour per 60 mins.
@@ -287,20 +279,11 @@ object OpenStackLogProcessor {
     *   -    If current hour is 15:00 and log is 17:00, time difference would be then 24-17+15=22 hours
     *    in this case the acceptable values would be any but 1h, 6 h and 12h since these ones are abobe the range
     *
->>>>>>> feature/add-entity-table
     * @param timeframe
     * @param valKey
     * @return
     */
-<<<<<<< HEAD
-  def isValidTimeFrame(timeframe: Int, valKey: Int): Boolean = {
-    val timeframeSeconds: Int = timeframe * 60
-    val now: DateTime = DateTime.now(DateTimeZone.UTC)
-    val nowSeconds: Int =  now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
-    timeframeSeconds > (nowSeconds - valKey)
-  }
 
-=======
   def isValidTimeFrame(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
     val timeframeSeconds: Int = timeframe * 60
     val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
@@ -311,5 +294,4 @@ object OpenStackLogProcessor {
   }
 
 
->>>>>>> feature/add-entity-table
 }
