@@ -138,14 +138,92 @@ class ProcessorHelperTest {
   }
 
   @Test
-  def testBuildDatetime() = {
-    val lineOfLog = "2017-02-27 06:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
+  def testBuildDatetimeFromFieldsLog() = {
+    val lineOfLog = "2017-02-28 06:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
       "142a0f7a3b154a16be18f9c97aa3f426"
-   val dateTimeFromLog = ProcessorHelper.buildDateTimeFromFieldsLog(lineOfLog)
+    val dateTimeFromLog: DateTime = ProcessorHelper.buildDateTimeFromFieldsLog(lineOfLog)
+    val dateTimeManually = new DateTime(2017, 2, 28, 6, 30, 14, 365)
+    Assert.assertEquals(dateTimeFromLog, dateTimeManually)
+  }
+
+  @Test
+  def testForGettingPeriodsOfTime() = {
+    val lineOfLog = "2017-02-28 06:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
+      "142a0f7a3b154a16be18f9c97aa3f426"
+    val dateTimeFromLog: DateTime = ProcessorHelper.buildDateTimeFromFieldsLog(lineOfLog)
     val now = DateTime.now
     val seconds: Seconds = Seconds.secondsBetween(now, dateTimeFromLog)
-
-
-
+    val minutes: Minutes = Minutes.minutesBetween(now, dateTimeFromLog)
+    val hours: Hours = Hours.hoursBetween(now, dateTimeFromLog)
+    println(hours)
+    println(minutes)
+    println(seconds)
   }
+
+  @Test
+  def testForValidityPeriodTimeFrame() = {
+    val valKeys = Seq(3600, 21600, 43200, 86400, 604800, 2419200)
+    val lineOfLog = "2017-03-28 06:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
+      "142a0f7a3b154a16be18f9c97aa3f426"
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 6, 31)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 7, 29)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 6, 30, 14, 365)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 29, 6, 30, 14, 365)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 86400, new DateTime(2017, 3, 29, 6, 30, 14, 365)))
+
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 21600, new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 43200,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 86400,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 604800,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 2419200,  new DateTime(2017, 3, 28, 8, 0)))
+
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 21600, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 43200, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 86400, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 604800, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 2419200, new DateTime(2017, 3, 28, 12, 30)))
+
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 3600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 21600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 43200, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 86400, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 604800, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog, 2419200, new DateTime(2017, 3, 28, 14, 30)))
+
+    val lineOfLog2 = "2017-03-27 16:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
+      "142a0f7a3b154a16be18f9c97aa3f426"
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 3600, new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 21600, new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 43200,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 86400,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 604800,  new DateTime(2017, 3, 28, 8, 0)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 2419200,  new DateTime(2017, 3, 28, 8, 0)))
+
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 3600, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 21600, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 43200, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 86400, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 604800, new DateTime(2017, 3, 28, 12, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 2419200, new DateTime(2017, 3, 28, 12, 30)))
+
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 3600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 21600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 43200, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 86400, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 604800, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog2, 2419200, new DateTime(2017, 3, 28, 14, 30)))
+
+    val lineOfLog3 = "2017-02-27 16:30:14.365 4025 WARNING keystone.common.wsgi [-] Could not find token: " +
+      "142a0f7a3b154a16be18f9c97aa3f426"
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 3600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 21600, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 43200, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 86400, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertFalse(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 604800, new DateTime(2017, 3, 28, 14, 30)))
+    Assert.assertTrue(ProcessorHelper.isValidPeriodTimeFrame(lineOfLog3, 2419200, new DateTime(2017, 3, 27, 14, 30)))
+  }
+
+
 }
