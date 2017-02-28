@@ -1,4 +1,4 @@
-package com.keedio.flink
+package com.keedio.flink.entities
 
 /**
   * Created by luislazaro on 20/2/17.

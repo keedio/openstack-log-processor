@@ -1,6 +1,6 @@
 package com.keedio.flink.integration
 
-import com.keedio.flink.LogEntry
+import com.keedio.flink.entities.LogEntry
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment, createTypeInformation}
 import org.junit.Test
