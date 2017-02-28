@@ -36,6 +36,18 @@ object ProcessorHelper {
   }
 
   /**
+    * Validate date + time from line of log against valkey.
+    * @param lineOfLog
+    * @param valKey
+    * @param now
+    * @return
+    */
+  def isValidPeriodTimeFrame(lineOfLog: String, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
+    val dateTimeFromLog: DateTime = ProcessorHelper.buildDateTimeFromFieldsLog(lineOfLog)
+    Seconds.secondsBetween(dateTimeFromLog, now).getSeconds <= valKey
+  }
+
+  /**
     * TTL is computed.
     * @param timeframe
     * @param valKey
