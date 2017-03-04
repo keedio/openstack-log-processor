@@ -108,7 +108,18 @@ under the License.
             <version>2.1.4</version>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/org.json4s/json4s-native_2.11 -->
         <dependency>
+            <groupId>org.json4s</groupId>
+            <artifactId>json4s-native_2.10</artifactId>
+            <version>3.5.0</version>
+        </dependency>
+        <!--<dependency>-->
+            <!--<groupId>net.liftweb</groupId>-->
+            <!--<artifactId>lift-webkit_2.10</artifactId>-->
+            <!--<version>3.0-M1</version>-->
+        <!--</dependency>-->
+         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
@@ -126,7 +137,7 @@ under the License.
             <version>19.0</version>
             <scope>test</scope>
         </dependency>
-    </dependencies>
+       </dependencies>
     <build>
         <resources>
             <resource>
