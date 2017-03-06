@@ -176,16 +176,10 @@ object OpenStackLogProcessor {
         val logLevel: String = SyslogCode.severity(logEntry.severity)
         val service = logEntry.service
         val node_type = logEntry.hostname
-        //val pieceDate: String = logEntry.timestamp.split("\\s+")(0)
-        val timestamp: DateTime = ProcessorHelper.getParsedTimestamp(logEntry.timestamp)
+        val timestamp: DateTime = new DateTime(ProcessorHelper.toTimestamp(logEntry.timestamp))
         val pieceDate: String = new String(timestamp.getYear.toString + "-" + timestamp.getMonthOfYear.toString + "-" +
           timestamp.getDayOfMonth.toString)
-        var log_ts = new Timestamp(0L)
-        try {
-          log_ts = Timestamp.valueOf(logEntry.timestamp)
-        } catch {
-          case e: IllegalArgumentException => LOG.info("cannot create timestamp from string " + logEntry.timestamp)
-        }
+        val log_ts: Timestamp = ProcessorHelper.toTimestamp(logEntry.timestamp)
         new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.toString)
       })
   }
@@ -207,9 +201,7 @@ object OpenStackLogProcessor {
       .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
       .map(logEntry => {
         val logLevel: String = SyslogCode.severity(logEntry.severity)
-        //val pieceTime: String = logEntry.timestamp.split("\\s+")(1)
         val timeframe: Int = ProcessorHelper.getTimeFrameMinutes(logEntry.timestamp)
-        //val timeframe: Int = ProcessorHelper.getMinutesFromTimePieceLogLine(pieceTime)
         val service = logEntry.service
         val ttl: Int = ProcessorHelper.computeTTLperiod(logEntry.timestamp , valKey)
         new Tuple7(timeKey, region, logLevel, service, timeframe, logEntry.timestamp, ttl)

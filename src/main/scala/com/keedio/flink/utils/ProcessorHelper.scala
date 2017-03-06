@@ -1,5 +1,9 @@
 package com.keedio.flink.utils
 
+import java.sql.Timestamp
+import java.util.Date
+
+import org.apache.commons.lang3.time.DateUtils
 import org.apache.log4j.Logger
 import org.joda.time._
 import org.joda.time.format.{DateTimeFormat, DateTimeFormatterBuilder}
@@ -13,44 +17,6 @@ import scala.collection.immutable.Seq
   */
 object ProcessorHelper {
   val LOG: Logger = Logger.getLogger(getClass)
-
- /* /**
-    * The intention is to validate the log printed hour against the hour range they should belong to.
-    * Specifically, if the hour range is  {1h, 6h, 12h, 24h, 1w, 1m}, each of this values but transformated into
-    * seconds units would be the valkey and the “timeframe” then would be the log hour per 60 mins.
-    * One log hour would be valid only if the timeframe between the log hour and current hour is whihin the framework
-    * that the “timeframe” field limits
-    * For example:
-    *   -    Current hour is 15:00 and the log is 08:00. Time difference would be 15-8=7 hours, this will render
-    * that all hour values would be acceptable but 1h and 6 h since this ones are above the range
-    *   -    If current hour is 15:00 and log is 17:00, time difference would be then 24-17+15=22 hours
-    * in this case the acceptable values would be any but 1h, 6 h and 12h since these ones are abobe the range
-    *
-    * @param timeframe
-    * @param valKey
-    * @return
-    */
-  def isValidTimeFrame(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
-    val timeframeSeconds: Int = timeframe * 60
-    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
-    timeframeSeconds <= nowSeconds match {
-      case true => (nowSeconds - timeframeSeconds) <= valKey
-      case false => (24 * 60 * 60) - timeframeSeconds + nowSeconds <= valKey
-    }
-  }*/
-
- /* /**
-    * Validate date + time from line of log against valkey.
-    *
-    * @param lineOfLog
-    * @param valKey
-    * @param now
-    * @return
-    */
-  def isValidPeriodTimeFrame(lineOfLog: String, valKey: Int, now: DateTime = DateTime.now()): Boolean = {
-    val dateTimeFromLog: DateTime = ProcessorHelper.buildDateTimeFromFieldsLog(lineOfLog)
-    Seconds.secondsBetween(dateTimeFromLog, now).getSeconds <= valKey
-  }*/
 
   /**
     * Validate date + time from timestamp attribute
@@ -68,23 +34,6 @@ object ProcessorHelper {
     val dateTimeFromLog: DateTime = getParsedTimestamp(timestamp)
     Seconds.secondsBetween(dateTimeFromLog, now).getSeconds <= valKey
   }
-
-  /*/**
-    * TTL is computed on basis timeframe (hh * 60 (minutes) + mm (minutes))
-    *
-    * @param timeframe
-    * @param valKey
-    * @param now
-    * @return
-    */
-  def computeTTL(timeframe: Int, valKey: Int, now: DateTime = DateTime.now()): Int = {
-    val timeframeSeconds: Int = timeframe * 60
-    val nowSeconds: Int = now.getHourOfDay * 3600 + now.getMinuteOfHour * 60 + now.getSecondOfMinute
-    timeframeSeconds <= nowSeconds match {
-      case true => valKey - (nowSeconds - timeframeSeconds)
-      case false => valKey - ((24 * 60 * 60) - timeframeSeconds + nowSeconds)
-    }
-  }*/
 
   /**
     * TTL is computed on basis timestamp
@@ -119,53 +68,6 @@ object ProcessorHelper {
     pieceHour + pieceMinute
   }
 
-
-  /*/**
-    * Extract value "log-level" form a common syslog line.
-    * Value for log level info is expected to be the fourth word in a standarized syslog line.
-    * If standard is not met, use argument 'exp' for marking off an expression.
-    * Example:
-    * - common syslog: "2017-02-10 06:18:07.264 3397 INFO eventlet.wsgi.server ...some other stuff"
-    * - irregular syslog: "whatever myMachineName: 2017-02-10 06:18:07.264 3397 INFO eventlet.wsgi.server ...some
-    * other stuff"
-    * exp = "myMachine:"
-    *
-    * @param s
-    * @param exp
-    * @return
-    */
-  def getFieldFromString(s: String, exp: String = "", position: Int): String = {
-    var requiredValue: String = ""
-    try {
-      requiredValue = s.trim.split("\\s+")(position)
-    } catch {
-      case e: ArrayIndexOutOfBoundsException => LOG.error(
-        "Cannot parse string: does line contains loglevel info or timestamp? " + s)
-    }
-    requiredValue
-  }*/
-
- /* /**
-    * Auxiliar function for creation a Joda.Period object parsing the date and time
-    * from string log.
-    * Assumption: '2017-02-10 18:22:08.376' is always the first token from standard syslog.
-    *
-    * @param string
-    * @return
-    */
-  def buildDateTimeFromFieldsLog(string: String): DateTime = {
-    val pieceDate = ProcessorHelper.getFieldFromString(string, "", 0).trim
-    val year = pieceDate.split("-")(0).toInt
-    val month = pieceDate.split("-")(1).toInt
-    val day = pieceDate.split("-")(2).toInt
-    val pieceTime: String = ProcessorHelper.getFieldFromString(string, "", 1).trim
-    val hour = pieceTime.split(":")(0).toInt
-    val minute = pieceTime.split(":")(1).toInt
-    val seconds = pieceTime.split(":")(2).split("\\.")(0).toInt
-    val mseconds = pieceTime.split(":")(2).split("\\.")(1).toInt
-    new DateTime(year, month, day, hour, minute, seconds, mseconds)
-  }*/
-
   /**
     * Generate a list of strings of timestamps from diferents
     * periods of time before now().
@@ -175,12 +77,14 @@ object ProcessorHelper {
   def generateTimestamps(): Seq[String] = {
     val now: DateTime = DateTime.now
     val fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss.SSS")
+    //val fmt1 = DateTimeFormat.forPattern("MMM dd yyyy HH:mm:ss")
     val listMinutes: Seq[String] = (for (i <- 1 to 60) yield now.minusMinutes(i)) map (fmt.print(_))
     val listHours = (for (i <- 1 to 24) yield now.minusHours(i)) map (fmt.print(_))
     val listDays = (for (i <- 1 to 30) yield now.minusDays(i)) map (fmt.print(_))
     val listWeeks = (for (i <- 1 to 24) yield now.minusWeeks(i)) map (fmt.print(_))
     val listMonths = (for (i <- 1 to 6) yield now.minusMonths(i)) map (fmt.print(_))
-    (listMinutes ++ listHours ++ listDays ++ listWeeks ++ listMonths ++ Nil)
+    val listMinutes2: Seq[String] = (for (i <- 1 to 60) yield now.minusMinutes(i)) map (fmt.print(_))
+    (listMinutes ++ listHours ++ listDays ++ listWeeks ++ listMonths ++ listMinutes2 ++ Nil)
   }
 
   /**
@@ -213,7 +117,7 @@ object ProcessorHelper {
     val listOfPatterns = Array(
       "yyyy-MM-dd HH:mm:ss.SSS",
       "yyyy-MM-dd HH:mm:ss",
-      "MMM dd HH:mm:ss",
+      "MMM dd yyyy HH:mm:ss",
       "yyyy/MM/dd HH:mm:ss.SSS"
     )
     val parsers = listOfPatterns.map(DateTimeFormat.forPattern(_).getParser)
@@ -235,6 +139,31 @@ object ProcessorHelper {
   def getTimeFrameMinutes(timestampAsString: String) = {
     val parsedTime = ProcessorHelper.getParsedTimestamp(timestampAsString)
     parsedTime.getHourOfDay * 60 + parsedTime.getMinuteOfHour
+  }
+
+  /**
+    * generate java.sql.Timestamp from string
+    * @param dateAsString
+    * @return
+    */
+  def toTimestamp(dateAsString: String): Timestamp = {
+    val listOfFormats = Seq(
+      "yyyy-MM-dd HH:mm:ss.SSS",
+      "yyyy-MM-dd HH:mm:ss",
+      "MMM dd yyyy HH:mm:ss",
+      "yyyy/MM/dd HH:mm:ss.SSS"
+    )
+    try {
+      val a: Date = DateUtils.parseDateStrictly(dateAsString, listOfFormats: _*)
+      new Timestamp(a.getTime)
+    } catch {
+      case t: Throwable => {
+        LOG.error("Supplying Timestamp with Epoch Time.", t)
+        new Timestamp(0L)
+      }
+    }
+
+
   }
 
 }
