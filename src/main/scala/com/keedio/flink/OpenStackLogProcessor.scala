@@ -203,7 +203,7 @@ object OpenStackLogProcessor {
         val logLevel: String = SyslogCode.severity(logEntry.severity)
         val timeframe: Int = ProcessorHelper.getTimeFrameMinutes(logEntry.timestamp)
         val service = logEntry.service
-        val ttl: Int = ProcessorHelper.computeTTLperiod(logEntry.timestamp , valKey)
+        val ttl: Int = ProcessorHelper.computeTTL(logEntry.timestamp , valKey)
         new Tuple7(timeKey, region, logLevel, service, timeframe, logEntry.timestamp, ttl)
       })
       .filter(t => t.f6 > 0)

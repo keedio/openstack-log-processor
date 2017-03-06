@@ -7,7 +7,7 @@ import com.datastax.driver.core._
 import com.keedio.flink.EmbeddedCassandraServer
 import com.keedio.flink.OpenStackLogProcessor._
 import com.keedio.flink.entities.LogEntry
-import com.keedio.flink.utils.ProcessorHelper
+import com.keedio.flink.utils.ProcessorHelperPoc
 import org.apache.flink.api.java.tuple.{Tuple5, Tuple7}
 import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
@@ -15,6 +15,8 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.hamcrest.MatcherAssert._
 import org.hamcrest.Matchers._
 import org.hamcrest.number.OrderingComparisons.lessThanOrEqualTo
+import org.joda.time.DateTime
+import org.joda.time.format.DateTimeFormat
 import org.junit._
 
 import scala.collection.JavaConversions._
@@ -41,8 +43,8 @@ class ProcessorInjectionLogEntryTest {
   val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
   val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
     604800, "1m" -> 2419200)
-  val listOfTimestamps: Seq[String] = ProcessorHelper.generateTimestamps()
-  val listOfDummyLogs: Seq[String] = ProcessorHelper.generateListOflogs(listOfTimestamps)
+  val listOfTimestamps: Seq[String] = generateTimestamps()
+  val listOfDummyLogs: Seq[String] = generateListOflogs(listOfTimestamps)
   val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
   //parse json as LogEntry
   val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
@@ -209,6 +211,45 @@ class ProcessorInjectionLogEntryTest {
     a.foreach(println)
   }
 
+
+  /**
+    * Auxiliar function for generating a list of strings of timestamps from diferents
+    * periods of time before now().
+    *
+    * @return
+    */
+  def generateTimestamps(): Seq[String] = {
+    val now: DateTime = DateTime.now
+    val fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss.SSS")
+    //val fmt1 = DateTimeFormat.forPattern("MMM dd yyyy HH:mm:ss")
+    val listMinutes: Seq[String] = (for (i <- 1 to 60) yield now.minusMinutes(i)) map (fmt.print(_))
+    val listHours = (for (i <- 1 to 24) yield now.minusHours(i)) map (fmt.print(_))
+    val listDays = (for (i <- 1 to 30) yield now.minusDays(i)) map (fmt.print(_))
+    val listWeeks = (for (i <- 1 to 24) yield now.minusWeeks(i)) map (fmt.print(_))
+    val listMonths = (for (i <- 1 to 6) yield now.minusMonths(i)) map (fmt.print(_))
+    val listMinutes2: Seq[String] = (for (i <- 1 to 60) yield now.minusMinutes(i)) map (fmt.print(_))
+    (listMinutes ++ listHours ++ listDays ++ listWeeks ++ listMonths ++ listMinutes2 ++ Nil)
+  }
+
+
+  /**
+    * Create a list of Json supplying severals fields for
+    *
+    * @param listOfTimes
+    * @return
+    */
+  def generateListOflogs(listOfTimes: Seq[String]) = {
+    val bodyField = "root: payload of information .....[]"
+    listOfTimes.map(timestamp => {
+      val severityField = scala.util.Random.nextInt(7).toString
+      val serviceField = ProcessorHelperPoc.generateRandomService
+      new String(
+        s"""{\"severity\":\"$severityField\",\"body\":\"$bodyField\",\"spriority\":\"13\",
+           \"hostname\":\"poc-rhlogs\",\"protocol\":\"UDP\",\"port\":\"7780\",\"sender\":\"/192.168.0.2\",
+           \"service\":\"$serviceField\",\"id\":\"5143170000_8c3dbd91-410e-4410-9d36-dfa4989df1ab\",
+           \"facility\":\"1\",\"timestamp\":\"$timestamp\"}""".stripLineEnd)
+    })
+  }
 }
 
 
