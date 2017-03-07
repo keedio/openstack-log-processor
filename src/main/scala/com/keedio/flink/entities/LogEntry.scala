@@ -1,45 +1,54 @@
 package com.keedio.flink.entities
 
+import org.json4s.DefaultFormats
+import org.json4s.native.JsonMethods._
+import org.apache.log4j.Logger
+
+import scala.util._
+
 /**
   * Created by luislazaro on 16/2/17.
   * lalazaro@keedio.com
   * Keedio
   */
-class LogEntry(lineOfLog: String, fields: Seq[String], separator: String) extends Serializable {
+class LogEntry(
+                val severity: String,
+                val body: String,
+                val spriority: String,
+                val hostname: String,
+                val protocol: String,
+                val port    : String,
+                val sender  : String,
+                val service : String,
+                val id      : String,
+                val facility: String,
+                val timestamp: String) {
 
-  private val fieldsOfLineLog: Seq[String] = getValuesFromLineOfLog(lineOfLog, separator)
-  val valuesMap: Map[String, String] = fillValuesMap(fields, fieldsOfLineLog)
+  def this() = this("", "", "", "", "", "", "", "", "", "", "")
 
-  /**
-    * Build a list of strings from a line of syslog
-    *
-    * @param lineOfLog
-    * @param separator
-    * @return
-    */
-  def getValuesFromLineOfLog(lineOfLog: String, separator: String): Seq[String] = {
-    lineOfLog.split(separator).map(_.trim) toSeq
+  def isValid()= {
+    ! timestamp.isEmpty && ! severity.isEmpty
   }
 
-  /**
-    * Filling elements of map zipping keys with values.
-    * If number of elements are equals (k -> v)
-    * If number of fields < values rest of values from line log become a single value called remainingLong
-    *
-    * @param fields
-    * @param fieldsOfLineLog
-    * @return
-    */
-  def fillValuesMap(fields: Seq[String], fieldsOfLineLog: Seq[String]): Map[String, String] = {
-    if (fields.size == fieldsOfLineLog.size) {
-      fields zip fieldsOfLineLog toMap
-    } else if (fields.size < fieldsOfLineLog.size) {
-      val mapAux = fields zip fieldsOfLineLog toMap
-      val remainingLog = "remainingLog"
-      val lastValues: Seq[String] = fieldsOfLineLog.slice(fields.size,  fieldsOfLineLog.size)
-      (fields zip fieldsOfLineLog toMap) + (remainingLog -> lastValues.mkString(separator))
-    } else fields zip fieldsOfLineLog toMap
-  }
+  override def toString = s"$timestamp, $hostname, $severity, $protocol, $port, $sender, $service, $id, $facility, $body"
+}
 
+object LogEntry extends Serializable {
+
+  val LOG: Logger = Logger.getLogger(classOf[LogEntry])
+
+  def apply(s  : String): LogEntry = {
+    implicit val formats = DefaultFormats
+    val parsedlog = Try(parse(s).extract[LogEntry])
+      parsedlog.isSuccess match {
+      case true => parsedlog.get
+      case false =>
+        LOG.error("cannot parse string to LogEntry: " + s)
+        new LogEntry()
+    }
+  }
 
 }
+
+
+

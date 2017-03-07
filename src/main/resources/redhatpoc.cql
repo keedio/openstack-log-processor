@@ -26,3 +26,17 @@ CREATE TABLE redhatpoc.cassandraconnectorexample(
              log_ts timestamp,
               payload text,
               PRIMARY KEY((date), service, loglevel, region));
+
+    CREATE TABLE redhatpoc.counters_nodes (
+    id text,
+     region text,
+      az text,
+       loglevel text,
+        node_type text,
+         ts timeuuid,
+          primary key ( (id), loglevel, region,az, ts) );
+
+    CREATE TABLE counters_services (
+    id text,
+     region text,
+      az text, loglevel text, service text, ts timeuuid, primary key ((id), service, loglevel, region,az, ts) );
