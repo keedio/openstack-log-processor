@@ -1,5 +1,8 @@
 package com.keedio.flink.utils
 
+import java.sql.Timestamp
+
+import org.apache.commons.lang3.time.FastDateFormat
 import org.joda.time.DateTime
 import org.junit.{Assert, Test}
 
@@ -34,6 +37,14 @@ class ProcessorHelperTest {
   def testComputeTTL = {
     listOfKeys.foreach(kv => Assert.assertTrue(ProcessorHelper.computeTTL("2016-03-05 14:30:00", kv._2, new DateTime(2016, 3 , 5, 17, 0, 0)) < kv._2))
     listOfKeys.foreach(kv => Assert.assertFalse(ProcessorHelper.computeTTL("2016-03-05 14:30:00", kv._2, new DateTime(2016, 3 , 5, 13, 0, 0)) < kv._2))
+  }
+
+  @Test
+  def testToTimestamp = {
+    println("2017-03-07T16:33:33.562422+00:00")
+    println(ProcessorHelper.toTimestamp("2017-03-07T16:33:33.562422+00:00"))
+    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse("2017-03-07T16:33:33.562422+00:00").getTime))
+    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS").parse("2017-03-07T16:33:33.562422+00:00").getTime))
   }
 
 
