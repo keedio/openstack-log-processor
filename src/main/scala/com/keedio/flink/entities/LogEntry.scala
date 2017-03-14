@@ -47,6 +47,9 @@ object LogEntry extends Serializable {
         new LogEntry()
     }
   }
+  def getFields(): Seq[String] = {
+    getClass.getDeclaredFields.map(_.getName).toSeq
+  }
 
 }
 
