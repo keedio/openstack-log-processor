@@ -3,7 +3,7 @@ package com.keedio.flink.utils
 import java.sql.Timestamp
 import java.util.Date
 
-import org.apache.commons.lang3.time.{DateUtils, FastDateFormat}
+import org.apache.commons.lang3.time.DateUtils
 import org.apache.log4j.Logger
 import org.joda.time._
 
@@ -78,8 +78,8 @@ object ProcessorHelper {
       "MMM dd yyyy HH:mm:ss",
       "yyyy/MM/dd HH:mm:ss.SSS",
       "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ",
-      "yyyy-MM-dd'T'HH:mm:ss.SSSSSSzz"
-      //"yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS"
+      "yyyy-MM-dd'T'HH:mm:ss.SSSSSSzz",
+      "yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS"
     )
     try {
       val a: Date = DateUtils.parseDateStrictly(dateAsString, listOfFormats: _*)
@@ -88,7 +88,6 @@ object ProcessorHelper {
       case t: Throwable => {
         LOG.error(s"Cannot parse syslog.timestamp $dateAsString, supplying Timestamp with Epoch Time.", t)
         new Timestamp(0L)
-        new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse(dateAsString).getTime)
       }
     }
 

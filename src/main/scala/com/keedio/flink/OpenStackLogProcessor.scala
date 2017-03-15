@@ -30,7 +30,8 @@ object OpenStackLogProcessor {
 
   def main(args: Array[String]): Unit = {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    val parameterTool = ParameterTool.fromArgs(args)
+    //From the command line arguments
+    val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val stream: DataStream[String] = env
@@ -38,7 +39,8 @@ object OpenStackLogProcessor {
         parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
 
     //parse string to logentry entitie
-    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
+    val streamOfLogs: DataStream[LogEntry] = stream.map(string =>
+      LogEntry(string, parameterTool.getBoolean("parseBody", true)))
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->

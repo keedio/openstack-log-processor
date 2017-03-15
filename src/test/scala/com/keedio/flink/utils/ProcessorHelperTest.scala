@@ -45,7 +45,8 @@ class ProcessorHelperTest {
     println(ProcessorHelper.toTimestamp("2017-03-07T16:33:33.562422+00:00"))
     println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse("2017-03-07T16:33:33.562422+00:00").getTime))
     println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS").parse("2017-03-07T16:33:33.562422+00:00").getTime))
-  }
+    println(new Timestamp(0L).toString)
+    }
 
 
 }
