@@ -77,6 +77,7 @@ object LogEntry extends Serializable {
 
   /**
     * extract a string that matches a timestamp
+    *
     * @param payload
     * @return
     */
@@ -94,6 +95,7 @@ object LogEntry extends Serializable {
     * extract string that matches a severity attribute
     * If severity is extracted, for example "INFO", we must
     * retunr number of INFO severity.
+    *
     * @param payload
     * @return
     */
@@ -117,6 +119,7 @@ object LogEntry extends Serializable {
     * extract body (real payload) from payload
     * example: syslog.body: "....warning...[-] description about what happened"
     * real body is "[-] description about what happened "
+    *
     * @param payload
     * @return
     */
