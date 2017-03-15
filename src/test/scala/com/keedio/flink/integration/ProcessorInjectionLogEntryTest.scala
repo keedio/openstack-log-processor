@@ -7,7 +7,7 @@ import com.datastax.driver.core._
 import com.keedio.flink.EmbeddedCassandraServer
 import com.keedio.flink.OpenStackLogProcessor._
 import com.keedio.flink.entities.LogEntry
-import com.keedio.flink.utils.ProcessorHelperPoc
+import com.keedio.flink.utils.{ProcessorHelperPoc, SyslogCode}
 import org.apache.flink.api.java.tuple.{Tuple5, Tuple7}
 import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
@@ -221,7 +221,6 @@ class ProcessorInjectionLogEntryTest {
   def generateTimestamps(): Seq[String] = {
     val now: DateTime = DateTime.now
     val fmt = DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss.SSS")
-    //val fmt1 = DateTimeFormat.forPattern("MMM dd yyyy HH:mm:ss")
     val listMinutes: Seq[String] = (for (i <- 1 to 60) yield now.minusMinutes(i)) map (fmt.print(_))
     val listHours = (for (i <- 1 to 24) yield now.minusHours(i)) map (fmt.print(_))
     val listDays = (for (i <- 1 to 30) yield now.minusDays(i)) map (fmt.print(_))
@@ -239,8 +238,9 @@ class ProcessorInjectionLogEntryTest {
     * @return
     */
   def generateListOflogs(listOfTimes: Seq[String]) = {
-    val bodyField = "root: payload of information .....[]"
     listOfTimes.map(timestamp => {
+      val logLevel: String = SyslogCode.severity.get(scala.util.Random.nextInt(7).toString).get
+      val bodyField = s"whatever - - - ${timestamp} 0123456 ${logLevel} whatever.whatever [req-3a832c6b-c"
       val severityField = scala.util.Random.nextInt(7).toString
       val serviceField = ProcessorHelperPoc.generateRandomService
       new String(

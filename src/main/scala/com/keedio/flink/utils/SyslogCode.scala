@@ -13,14 +13,15 @@ object SyslogCode {
   }
 
   val severity = Map(
-    "0" -> "emerg",
-    "1" -> "alert",
-    "2" -> "crit",
+    "0" -> "EMERG",
+    "1" -> "ALERT",
+    "2" -> "CRIT",
     "3" -> "ERROR",
     "4" -> "WARNING",
-    "5" -> "notice",
+    "5" -> "NOTICE",
     "6" -> "INFO",
-    "7" -> "debug"
+    "7" -> "DEBUG"
   )
+  val numberOfSeverity: Map[String, String] = severity.map { case (k,v) => (v,k)}
   val acceptedLogLevels = Seq("ERROR", "WARNING", "INFO")
 }
