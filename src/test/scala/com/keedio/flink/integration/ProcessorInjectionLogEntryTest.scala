@@ -23,6 +23,7 @@ import scala.collection.JavaConversions._
 import scala.collection.Map
 import scala.collection.immutable.Seq
 
+
 /**
   * Created by luislazaro on 1/3/17.
   * lalazaro@keedio.com
@@ -85,8 +86,8 @@ class ProcessorInjectionLogEntryTest {
     val result: ResultSet = session.execute("select * from redhatpoc.stack_services WHERE id='24h';")
     assertThat(result.iterator.next.getString("id"), is("24h"))
     assertThat(result.iterator.next.getString("region"), is("boston"))
-    assertThat(result.iterator.next.getString("loglevel"), isOneOf("WARNING", "ERROR", "INFO"))
-    assertThat(result.iterator.next.getString("loglevel"), not(isOneOf("emerg", "aler", "crit", "notice", "debug")))
+    assertThat(result.iterator.next.getString("loglevel"), isIn(SyslogCode.acceptedLogLevels))
+    assertThat(result.iterator.next.getString("loglevel"), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels))))
 
     //validate ttl's value
     //Assert that computed TTL is always less than or equal the corresponding value of temporal key.
@@ -102,8 +103,8 @@ class ProcessorInjectionLogEntryTest {
     listOfKeys.foreach(kv => {
       val result: ResultSet = session.execute("select loglevel from redhatpoc.stack_services WHERE id=" + "'" + kv._1 + "';")
       val allresultsByKey: Seq[Row] = result.all().toIndexedSeq
-      allresultsByKey.foreach(row => assertThat(row.getString(0), isOneOf("WARNING", "ERROR", "INFO")))
-      allresultsByKey.foreach(row => assertThat(row.getString(0), not(isOneOf("emerg", "aler", "crit", "notice", "debug"))))
+      allresultsByKey.foreach(row => assertThat(row.getString(0), isIn(SyslogCode.acceptedLogLevels)))
+      allresultsByKey.foreach(row => assertThat(row.getString(0), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels)))))
     })
 
     //validate timeframe < 1440
@@ -140,6 +141,10 @@ class ProcessorInjectionLogEntryTest {
       .build()
 
     env.execute()
+    val result: ResultSet = session.execute("select loglevel from redhatpoc.raw_logs;")
+    val allresults: Seq[Row] = result.all().toIndexedSeq
+    allresults.foreach(row => assertThat(row.getString(0), isIn(SyslogCode.acceptedLogLevels)))
+    allresults.foreach(row => assertThat(row.getString(0), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels)))))
     val full = session.execute("select * from redhatpoc.raw_logs LIMIT 10")
     val a: Array[AnyRef] = full.all().toArray()
     a.foreach(println)
@@ -169,7 +174,10 @@ class ProcessorInjectionLogEntryTest {
     })
 
     env.execute()
-
+    val result: ResultSet = session.execute("select loglevel from redhatpoc.counters_nodes;")
+    val allresults: Seq[Row] = result.all().toIndexedSeq
+    allresults.foreach(row => assertThat(row.getString(0), isIn(SyslogCode.acceptedLogLevels)))
+    allresults.foreach(row => assertThat(row.getString(0), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels)))))
     val full = session.execute("select  * from redhatpoc.counters_nodes")
     val a: Array[AnyRef] = full.all().toArray()
     a.foreach(println)
@@ -205,7 +213,10 @@ class ProcessorInjectionLogEntryTest {
     })
 
     env.execute()
-
+    val result: ResultSet = session.execute("select loglevel from redhatpoc.counters_services;")
+    val allresults: Seq[Row] = result.all().toIndexedSeq
+    allresults.foreach(row => assertThat(row.getString(0), isIn(SyslogCode.acceptedLogLevels)))
+    allresults.foreach(row => assertThat(row.getString(0), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels)))))
     val full = session.execute("select  * from redhatpoc.counters_services")
     val a: Array[AnyRef] = full.all().toArray()
     a.foreach(println)
