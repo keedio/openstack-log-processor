@@ -193,7 +193,7 @@ object OpenStackLogProcessor {
         val pieceDate: String = new String(timestamp.getYear.toString + "-" + timestamp.getMonthOfYear.toString + "-" +
           timestamp.getDayOfMonth.toString)
         val log_ts: Timestamp = ProcessorHelper.toTimestamp(logEntry.timestamp)
-        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.toString)
+        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.body)
       })
   }
 
