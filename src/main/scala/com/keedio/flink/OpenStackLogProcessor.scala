@@ -57,7 +57,7 @@ object OpenStackLogProcessor {
       .map(e => logEntryToTupleSS(streamOfLogs, e._1, e._2, "boston"))
 
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
-      logEntryToTupleRL(streamOfLogs,"boston")
+      logEntryToTupleRL(streamOfLogs, "boston")
 
     //SINKING
     listNodeCounter.foreach(t => {
@@ -66,7 +66,10 @@ object OpenStackLogProcessor {
         "region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
         .setClusterBuilder(new ClusterBuilder() {
           override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+            builder
+              .addContactPoint(parameterTool.getRequired("cassandra.host"))
+              .withPort(parameterTool.getInt("cassandra.port"))
+              .build()
           }
         })
         .build()
@@ -83,7 +86,10 @@ object OpenStackLogProcessor {
           "?, now()) USING TTL " + t._2 + ";")
         .setClusterBuilder(new ClusterBuilder() {
           override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+            builder
+              .addContactPoint(parameterTool.getRequired("cassandra.host"))
+              .withPort(parameterTool.getInt("cassandra.port"))
+              .build()
           }
         })
         .build()
@@ -95,8 +101,10 @@ object OpenStackLogProcessor {
         "timeframe, " + "tfHours)" + " " + "VALUES " + "(?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
         .setClusterBuilder(new ClusterBuilder() {
           override def buildCluster(builder: Builder): Cluster = {
-            builder.addContactPoint(parameterTool
-              .getRequired("cassandra.host")).build()
+            builder
+              .addContactPoint(parameterTool.getRequired("cassandra.host"))
+              .withPort(parameterTool.getInt("cassandra.port"))
+              .build()
           }
         })
         .build()
@@ -107,7 +115,10 @@ object OpenStackLogProcessor {
         "VALUES " + "(?, ?, ?, ?, ?, ?, ?);")
       .setClusterBuilder(new ClusterBuilder() {
         override def buildCluster(builder: Builder): Cluster = {
-          builder.addContactPoint(parameterTool.getRequired("cassandra.host")).build()
+          builder
+            .addContactPoint(parameterTool.getRequired("cassandra.host"))
+            .withPort(parameterTool.getInt("cassandra.port"))
+            .build()
         }
       })
       .build()
@@ -120,15 +131,15 @@ object OpenStackLogProcessor {
     }
   }
 
-/**
-* Function to map from DataStream of LogEntry to Tuple of node counters
-  *
-  * @param streamOfLogs
-* @param timeKey
-* @param az
-* @param region
-* @return
-  */
+  /**
+    * Function to map from DataStream of LogEntry to Tuple of node counters
+    *
+    * @param streamOfLogs
+    * @param timeKey
+    * @param az
+    * @param region
+    * @return
+    */
   def logEntryToTupleNC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String):
   DataStream[Tuple5[String, String, String, String, String]] = {
     streamOfLogs
@@ -141,15 +152,15 @@ object OpenStackLogProcessor {
       })
   }
 
-/**
-* Function to map from DataStream of LogEntry to Tupe of service counters
-  *
-  * @param streamOfLogs
-* @param timeKey
-* @param az
-* @param region
-* @return
-  */
+  /**
+    * Function to map from DataStream of LogEntry to Tupe of service counters
+    *
+    * @param streamOfLogs
+    * @param timeKey
+    * @param az
+    * @param region
+    * @return
+    */
   def logEntryToTupleSC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String):
   DataStream[Tuple5[String, String, String, String, String]] = {
     streamOfLogs
@@ -159,18 +170,18 @@ object OpenStackLogProcessor {
         val logLevel: String = SyslogCode.severity(logEntry.severity)
         val service = logEntry.service
         new Tuple5(timeKey, logLevel, az, region, service)
-    })
+      })
   }
 
-/**
-* function to map from Datastream of Logentry to Tuple raw logs
-  *
-  * @param streamOfLogs
-* @param region
-* @return
-  */
+  /**
+    * function to map from Datastream of Logentry to Tuple raw logs
+    *
+    * @param streamOfLogs
+    * @param region
+    * @return
+    */
   def logEntryToTupleRL(streamOfLogs: DataStream[LogEntry], region: String): DataStream[Tuple7[String, String,
-    String, String,String, Timestamp, String]] = {
+    String, String, String, Timestamp, String]] = {
     streamOfLogs
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
@@ -182,7 +193,7 @@ object OpenStackLogProcessor {
         val pieceDate: String = new String(timestamp.getYear.toString + "-" + timestamp.getMonthOfYear.toString + "-" +
           timestamp.getDayOfMonth.toString)
         val log_ts: Timestamp = ProcessorHelper.toTimestamp(logEntry.timestamp)
-        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.toString)
+        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.body)
       })
   }
 
@@ -205,13 +216,13 @@ object OpenStackLogProcessor {
         val logLevel: String = SyslogCode.severity(logEntry.severity)
         val timeframe: Int = ProcessorHelper.getTimeFrameMinutes(logEntry.timestamp)
         val service = logEntry.service
-        val ttl: Int = ProcessorHelper.computeTTL(logEntry.timestamp , valKey)
+        val ttl: Int = ProcessorHelper.computeTTL(logEntry.timestamp, valKey)
         new Tuple7(timeKey, region, logLevel, service, timeframe, logEntry.timestamp, ttl)
       })
       .filter(t => t.f6 > 0)
   }
 
-  }
+}
 
 
 
