@@ -43,9 +43,11 @@ class ProcessorHelperTest {
   def testToTimestamp = {
     println("2017-03-07T16:33:33.562422+00:00")
     println(ProcessorHelper.toTimestamp("2017-03-07T16:33:33.562422+00:00"))
-    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse("2017-03-07T16:33:33.562422+00:00").getTime))
+    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse("2017-03-07T16:33:33.562422+01:00").getTime))
+    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ").parse("2017-03-07T16:33:33.562422+00:00").getTime))
     println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS").parse("2017-03-07T16:33:33.562422+00:00").getTime))
     println(new Timestamp(0L).toString)
+    println(ProcessorHelper.toTimestamp("2017-03-22 14:48:44.924"))
     }
 
 
