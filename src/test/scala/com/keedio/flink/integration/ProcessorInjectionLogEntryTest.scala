@@ -123,17 +123,8 @@ class ProcessorInjectionLogEntryTest {
   @Test(timeout = 60000)
   def testInyectRawLogData() = {
 
-    val simpleLineOfLogs = "{\"severity\":\"7\",\"body\":\"neutron - - - 2017-03-22 15:40:56.296 125425 INFO neutron.wsgi [req-dfb7be84-8df7-4813-a2db-90bf119f0219 53fd1c7e36f54ae9a666ac0bb718e845 2cddb9a9318841728123a404dbe6e573 - - -] 192.168.1.12 - - [22/Mar/2017 15:40:56] \\\"GET /v2.0/networks.json?id=fe7bd56e-fe8e-4fb2-b8c3-cc0705b41019 HTTP/1.1\\\" 200 916 0.212964\",\"spriority\":\"191\",\"hostname\":\"overcloud-controller-1\",\"protocol\":\"TCP\",\"port\":\"7793\",\"sender\":\"/192.168.1.13\",\"service\":\"Neutron\",\"id\":\"62b394a5-b77d-45df-88e0-c8de78827a90\",\"facility\":\"23\",\"timestamp\":\"2017-03-22T15:41:04.457237+00:00\"}"
-    val listOflogsSimple = Seq(simpleLineOfLogs)
-    val streamSimple: DataStream[String] = env.fromCollection(listOflogsSimple)
-    val streamOfSingleLog: DataStream[LogEntry] = streamSimple.map(s => LogEntry(s))
-    streamOfSingleLog.rebalance.print
-    streamOfSingleLog.map(log => log.timestamp).rebalance.print
-
     val rawLogEntry: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
-      logEntryToTupleRL(streamOfSingleLog, "boston")
-    rawLogEntry.rebalance.print
-
+      logEntryToTupleRL(streamOfLogs, "boston")
 
     CassandraSink.addSink(rawLogEntry.javaStream)
       .setQuery("INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) VALUES " +
