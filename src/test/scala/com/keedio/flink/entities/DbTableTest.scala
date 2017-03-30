@@ -1,6 +1,6 @@
 package com.keedio.flink.entities
 
-import org.apache.flink.api.java.tuple.{Tuple, Tuple3}
+import org.apache.flink.api.java.tuple.{Tuple, Tuple3, Tuple4}
 import org.apache.flink.api.scala.{DataSet, ExecutionEnvironment, createTypeInformation}
 import org.junit.{Assert, Test}
 
@@ -60,6 +60,10 @@ class DbTableTest {
     for (i <- 0 to xTuple.getArity - 1) {
       Assert.assertNotNull(xTuple.getField(i))
     }
+
+    Assert.assertTrue(xTuple.isInstanceOf[Tuple])
+    Assert.assertTrue(xTuple.isInstanceOf[Tuple3[_, _, _]])
+    Assert.assertFalse(xTuple.isInstanceOf[Tuple4[_, _, _,_]])
   }
 
 

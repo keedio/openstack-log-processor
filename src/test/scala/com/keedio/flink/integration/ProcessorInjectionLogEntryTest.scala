@@ -145,6 +145,11 @@ class ProcessorInjectionLogEntryTest {
     val allresults: Seq[Row] = result.all().toIndexedSeq
     allresults.foreach(row => assertThat(row.getString(0), isIn(SyslogCode.acceptedLogLevels)))
     allresults.foreach(row => assertThat(row.getString(0), not(isIn(SyslogCode.severity.values.toSeq.diff(SyslogCode.acceptedLogLevels)))))
+
+    val result1: ResultSet = session.execute("select log_ts from redhatpoc.raw_logs;")
+    val allresults1 = result1.all().toIndexedSeq
+    allresults1.foreach(println)
+
     val full = session.execute("select * from redhatpoc.raw_logs LIMIT 10")
     val a: Array[AnyRef] = full.all().toArray()
     a.foreach(println)
