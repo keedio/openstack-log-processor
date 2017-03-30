@@ -6,6 +6,7 @@ import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
 import com.keedio.flink.entities.LogEntry
+import com.keedio.flink.mappers.{RichMapFunctionNC, RichMapFunctionRL, RichMapFunctionSC, RichMapFunctionSS}
 import com.keedio.flink.utils._
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
@@ -14,7 +15,6 @@ import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBu
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
-import org.joda.time.DateTime
 
 import scala.collection.Map
 
@@ -32,6 +32,8 @@ object OpenStackLogProcessor {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
     //From the command line arguments
     val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
+    val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
+
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val stream: DataStream[String] = env
@@ -68,7 +70,7 @@ object OpenStackLogProcessor {
           override def buildCluster(builder: Builder): Cluster = {
             builder
               .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(parameterTool.getInt("cassandra.port"))
+              .withPort(CASSANDRAPORT)
               .build()
           }
         })
@@ -88,7 +90,7 @@ object OpenStackLogProcessor {
           override def buildCluster(builder: Builder): Cluster = {
             builder
               .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(parameterTool.getInt("cassandra.port"))
+              .withPort(CASSANDRAPORT)
               .build()
           }
         })
@@ -103,7 +105,7 @@ object OpenStackLogProcessor {
           override def buildCluster(builder: Builder): Cluster = {
             builder
               .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(parameterTool.getInt("cassandra.port"))
+              .withPort(CASSANDRAPORT)
               .build()
           }
         })
@@ -117,7 +119,7 @@ object OpenStackLogProcessor {
         override def buildCluster(builder: Builder): Cluster = {
           builder
             .addContactPoint(parameterTool.getRequired("cassandra.host"))
-            .withPort(parameterTool.getInt("cassandra.port"))
+            .withPort(CASSANDRAPORT)
             .build()
         }
       })
@@ -125,7 +127,12 @@ object OpenStackLogProcessor {
 
     //execute
     try {
-      env.execute()
+      env.execute(s"OpensStack Log Processor :" +
+        s" kafka ${parameterTool.getProperties.getProperty("bootstrap.servers")}," +
+        s" zookeeper ${parameterTool.getProperties.getProperty("zookeeper.connect")}," +
+        s" topic ${parameterTool.getRequired("topic")}," +
+        s" cassandra ${parameterTool.getRequired("cassandra.host")}" +
+        s" : ${CASSANDRAPORT} ")
     } catch {
       case e: DriverException => LOG.error("", e)
     }
@@ -140,16 +147,11 @@ object OpenStackLogProcessor {
     * @param region
     * @return
     */
-  def logEntryToTupleNC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String):
-  DataStream[Tuple5[String, String, String, String, String]] = {
+  def logEntryToTupleNC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String): DataStream[Tuple5[String, String, String, String, String]] = {
     streamOfLogs
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(logEntry => {
-        val logLevel: String = SyslogCode.severity(logEntry.severity)
-        val node = logEntry.hostname
-        new Tuple5(timeKey, logLevel, az, region, node)
-      })
+      .map(new RichMapFunctionNC(timeKey, az, region))
   }
 
   /**
@@ -166,11 +168,7 @@ object OpenStackLogProcessor {
     streamOfLogs
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(logEntry => {
-        val logLevel: String = SyslogCode.severity(logEntry.severity)
-        val service = logEntry.service
-        new Tuple5(timeKey, logLevel, az, region, service)
-      })
+      .map(new RichMapFunctionSC(timeKey, az, region))
   }
 
   /**
@@ -185,16 +183,7 @@ object OpenStackLogProcessor {
     streamOfLogs
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(logEntry => {
-        val logLevel: String = SyslogCode.severity(logEntry.severity)
-        val service = logEntry.service
-        val node_type = logEntry.hostname
-        val timestamp: DateTime = new DateTime(ProcessorHelper.toTimestamp(logEntry.timestamp))
-        val pieceDate: String = new String(timestamp.getYear.toString + "-" + timestamp.getMonthOfYear.toString + "-" +
-          timestamp.getDayOfMonth.toString)
-        val log_ts: Timestamp = ProcessorHelper.toTimestamp(logEntry.timestamp)
-        new Tuple7(pieceDate, region, logLevel, service, node_type, log_ts, logEntry.body)
-      })
+      .map(new RichMapFunctionRL(region))
   }
 
   /**
@@ -212,13 +201,7 @@ object OpenStackLogProcessor {
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
-      .map(logEntry => {
-        val logLevel: String = SyslogCode.severity(logEntry.severity)
-        val timeframe: Int = ProcessorHelper.getTimeFrameMinutes(logEntry.timestamp)
-        val service = logEntry.service
-        val ttl: Int = ProcessorHelper.computeTTL(logEntry.timestamp, valKey)
-        new Tuple7(timeKey, region, logLevel, service, timeframe, logEntry.timestamp, ttl)
-      })
+      .map(new RichMapFunctionSS(timeKey, valKey, region))
       .filter(t => t.f6 > 0)
   }
 

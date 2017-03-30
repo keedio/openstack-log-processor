@@ -115,11 +115,6 @@ under the License.
             <artifactId>json4s-native_2.10</artifactId>
             <version>3.5.0</version>
         </dependency>
-        <!--<dependency>-->
-        <!--<groupId>net.liftweb</groupId>-->
-        <!--<artifactId>lift-webkit_2.10</artifactId>-->
-        <!--<version>3.0-M1</version>-->
-        <!--</dependency>-->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>

@@ -43,11 +43,5 @@ class FirstMockitoTest {
     println
   }
 
-  @Test
-  def testVerificationFailure() = {
-    myLogEntry.isValid()
-    verify(myLogEntry.facility)
-    println
-  }
 
 }

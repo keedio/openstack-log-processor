@@ -4,6 +4,7 @@ import java.sql.Timestamp
 import java.util.Date
 
 import org.apache.commons.lang3.time.DateUtils
+import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.log4j.Logger
 import org.joda.time._
 
@@ -90,8 +91,28 @@ object ProcessorHelper {
         new Timestamp(0L)
       }
     }
+  }
 
-
+  /**
+    * Check for not mandatory key in parametertool map. If not exists,  provide default value for such a key.
+    * If key exists, check for value and return provided value or default.
+    * Method for pairs key-vals in map parametertool.
+    * @param parameterTool
+    * @param key
+    * @param default
+    * @return
+    */
+  def getValueFromArgs(parameterTool: ParameterTool, key: String, default: String): String = {
+    parameterTool.has(key) match {
+      case true => Option(parameterTool.get(key)) match {
+        case Some(value) => value match {
+          case "" => default
+          case _ => value
+        }
+        case None => default
+      }
+      case false => default
+    }
   }
 
 }

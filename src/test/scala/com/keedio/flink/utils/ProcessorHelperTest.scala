@@ -3,10 +3,12 @@ package com.keedio.flink.utils
 import java.sql.Timestamp
 
 import org.apache.commons.lang3.time.FastDateFormat
+import org.apache.flink.api.java.utils.ParameterTool
 import org.joda.time.DateTime
 import org.junit.{Assert, Test}
 
 import scala.collection.Map
+import scala.collection.JavaConverters._
 
 /**
   * Created by luislazaro on 27/2/17.
@@ -44,11 +46,22 @@ class ProcessorHelperTest {
     println("2017-03-07T16:33:33.562422+00:00")
     println(ProcessorHelper.toTimestamp("2017-03-07T16:33:33.562422+00:00"))
     println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZ").parse("2017-03-07T16:33:33.562422+01:00").getTime))
-    println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ").parse("2017-03-07T16:33:33.562422+00:00").getTime))
     println(new Timestamp(FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'+'SS:SS").parse("2017-03-07T16:33:33.562422+00:00").getTime))
     println(new Timestamp(0L).toString)
     println(ProcessorHelper.toTimestamp("2017-03-22 14:48:44.924"))
     }
+
+  @Test
+  def testGetValueFromArgs() = {
+    val mapForParameterTool1= Map("other.key1" -> "valueforkey1", "other.key2" -> "valuesforkey2").asJava
+    val parameterTool1 = ParameterTool.fromMap(mapForParameterTool1)
+    Assert.assertEquals(ProcessorHelper.getValueFromArgs(parameterTool1, "cassandra.port", "9042").toInt, 9042)
+
+    val mapForParameterTool2= Map("cassandra.port" -> "", "other.key1" -> "valueforkey1", "other.key2" -> "valuesforkey2").asJava
+    val parameterTool2 = ParameterTool.fromMap(mapForParameterTool2)
+    Assert.assertEquals(ProcessorHelper.getValueFromArgs(parameterTool2, "cassandra.port", "9042").toInt, 9042)
+
+  }
 
 
 }
