@@ -5,12 +5,20 @@ import java.sql.Timestamp
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
+import com.keedio.flink.cep.{IAlert, IAlertPattern}
+import com.keedio.flink.cep.alerts.ErrorAlert
+import com.keedio.flink.cep.patterns.ErrorAlertPattern
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers.{RichMapFunctionNC, RichMapFunctionRL, RichMapFunctionSC, RichMapFunctionSS}
 import com.keedio.flink.utils._
+import org.apache.flink.api.common.typeinfo.{TypeHint, TypeInformation}
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
-import org.apache.flink.streaming.api.scala.{DataStream, _}
+import org.apache.flink.cep.PatternSelectFunction
+import org.apache.flink.cep.scala.{CEP, PatternStream}
+import org.apache.flink.streaming.api.TimeCharacteristic
+import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
+import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
@@ -30,6 +38,9 @@ object OpenStackLogProcessor {
 
   def main(args: Array[String]): Unit = {
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    // Use the Measurement Timestamp of the Event (set a notion of time)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
     //From the command line arguments
     val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
     val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
@@ -43,6 +54,14 @@ object OpenStackLogProcessor {
     //parse string to logentry entitie
     val streamOfLogs: DataStream[LogEntry] = stream.map(string =>
       LogEntry(string, parameterTool.getBoolean("parseBody", true)))
+
+    //take a stream and produce a new stream with timestamped elements and watermarks
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(new AscendingTimestampExtractor[LogEntry] {
+      override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
+        ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+      }
+    })
+
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
@@ -125,6 +144,9 @@ object OpenStackLogProcessor {
       })
       .build()
 
+
+    toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern).rebalance.print
+
     //execute
     try {
       env.execute(s"OpensStack Log Processor :" +
@@ -203,6 +225,29 @@ object OpenStackLogProcessor {
       .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
       .map(new RichMapFunctionSS(timeKey, valKey, region))
       .filter(t => t.f6 > 0)
+  }
+
+  /**
+    * Generate DataStream of Alerts
+    */
+    def toAlertStream2[IAlert](streamOfLogs: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, ErrorAlert]): DataStream[ErrorAlert] = {
+      val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogs, alertPattern.getEventPattern())
+
+      val alerts: DataStream[ErrorAlert] = tempPatternStream.select(new PatternSelectFunction[LogEntry, ErrorAlert] {
+        override def select(map: java.util.Map[String, LogEntry]): ErrorAlert = alertPattern.create(map)
+      })
+      alerts
+    }
+
+  def toAlertStream[TAlertType <: IAlert](streamOfLogs: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, TAlertType]): DataStream[TAlertType] = {
+    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogs, alertPattern.getEventPattern())
+
+    implicit val typeInfo: TypeInformation[TAlertType] = TypeInformation.of(new TypeHint[TAlertType] {})
+
+    val alerts: DataStream[TAlertType] = tempPatternStream.select(new PatternSelectFunction[LogEntry, TAlertType] {
+      override def select(map: java.util.Map[String, LogEntry]): TAlertType = alertPattern.create(map)
+    })
+    alerts
   }
 
 }
