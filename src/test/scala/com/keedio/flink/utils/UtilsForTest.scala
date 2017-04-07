@@ -42,10 +42,11 @@ object UtilsForTest {
       val bodyField = s"whatever - - - ${timestamp} 0123456 ${logLevel} whatever.whatever [req-3a832c6b-c"
       val severityField = scala.util.Random.nextInt(7).toString
       val serviceField = ProcessorHelperPoc.generateRandomService
+      val id = new String(DateTime.now.getMillis + "_" + timestamp + "_" + timestamp.hashCode())
       new String(
         s"""{\"severity\":\"$severityField\",\"body\":\"$bodyField\",\"spriority\":\"13\",
            \"hostname\":\"poc-rhlogs\",\"protocol\":\"UDP\",\"port\":\"7780\",\"sender\":\"/192.168.0.2\",
-           \"service\":\"$serviceField\",\"id\":\"5143170000_8c3dbd91-410e-4410-9d36-dfa4989df1ab\",
+           \"service\":\"$serviceField\",\"id\":\"$id\",
            \"facility\":\"1\",\"timestamp\":\"$timestamp\"}""".stripLineEnd)
     })
   }

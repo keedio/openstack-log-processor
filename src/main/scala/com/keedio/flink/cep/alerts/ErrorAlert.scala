@@ -16,7 +16,7 @@ import com.keedio.flink.entities.LogEntry
 class ErrorAlert(val logEntry0: LogEntry, val logEntry1: LogEntry) extends IAlert{
 
   override def toString: String = {
-   "ErrorAlert: " + logEntry0 + "/--->" +  logEntry1
+   "ErrorAlert: " + "\n" + logEntry0  + "\n" +  logEntry1
   }
   def getEventSummary(logEntry: LogEntry): String = {
     logEntry.toString
