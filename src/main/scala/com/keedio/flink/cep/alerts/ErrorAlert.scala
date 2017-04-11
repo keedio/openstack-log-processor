@@ -22,4 +22,6 @@ class ErrorAlert(val logEntry0: LogEntry, val logEntry1: LogEntry) extends IAler
     logEntry.toString
   }
 
+  def getAlertName = "ErrorAlert"
+
 }

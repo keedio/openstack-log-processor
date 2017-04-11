@@ -4,7 +4,7 @@ import com.keedio.flink.OpenStackLogProcessor._
 import com.keedio.flink.cep.alerts.ErrorAlert
 import com.keedio.flink.cep.patterns.ErrorAlertPattern
 import com.keedio.flink.entities.LogEntry
-import com.keedio.flink.utils.{ProcessorHelper, SyslogCode, UtilsForTest}
+import com.keedio.flink.utils._
 import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
@@ -45,28 +45,34 @@ class ModelForCEPTest {
 
   /**
     * test generation of datastream of ErrorAlert
+    * generate 200 jsones randomly and execute 100 times detection of pattern. If match
+    * generate alert.
     */
   @Test
   def toErrorAlertStreamTest() = {
-    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
-    val listOfTimestamps: Seq[String] = UtilsForTest.generateTimestamps()
-    val listOfDummyLogs: Seq[String] = UtilsForTest.generateListOflogs(listOfTimestamps)
-    val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
-    //parse json as LogEntry
-    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
-      new AscendingTimestampExtractor[LogEntry] {
-        override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
-          ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
-        }
-      }).keyBy(_.service)
+    for (i <- 1 to 100) {
+      val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+      val listOfTimestamps: Seq[String] = UtilsForTest.generateTimestamps()
+      val listOfDummyLogs: Seq[String] = UtilsForTest.generateListOflogs(listOfTimestamps)
+      val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
 
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
-    alerts.rebalance.print
+      //parse json as LogEntry
+      val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
 
-    mapOfAsserts(alerts)
-    Assert.assertNotNull(env.execute())
+      val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+        new AscendingTimestampExtractor[LogEntry] {
+          override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
+            ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+          }
+        }).keyBy(_.service)
+
+      val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+
+      alerts.rebalance.print
+      mapOfAsserts(alerts)
+      Assert.assertNotNull(env.execute())
+    }
   }
 
   @Test
@@ -90,8 +96,8 @@ class ModelForCEPTest {
 
     val listOfDummyLogs: Seq[String] = Seq(json0, json1)
     val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
-    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
-    streamOfLogs.rebalance.print
+    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
+    streamOfLogs.print
     val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
       new AscendingTimestampExtractor[LogEntry] {
         override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
@@ -102,9 +108,6 @@ class ModelForCEPTest {
     val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
 
     alerts.rebalance.print
-
-    alerts.map(alert => println("==============================>>> " + alert.logEntry0))
-
     mapOfAsserts(alerts)
 
     Assert.assertNotNull(env.execute())
@@ -133,7 +136,8 @@ class ModelForCEPTest {
     val listOfDummyLogs: Seq[String] = Seq(json0, json1)
     val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
     val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
-    streamOfLogs.rebalance.print
+    //streamOfLogs.rebalance.print
+    streamOfLogs.print
     val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
       new AscendingTimestampExtractor[LogEntry] {
         override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
@@ -142,13 +146,30 @@ class ModelForCEPTest {
       }).keyBy(_.service)
 
     val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
-
     alerts.rebalance.print
-
-    alerts.map(alert => print("==============================>>> " + alert.logEntry0))
-
     mapOfAsserts(alerts)
-
     Assert.assertNotNull(env.execute())
+  }
+
+  @Test
+  def toErrorAlertLogStreamTestNOTMatchedPattern() = {
+    for (parallelism <- 1 to 10) {
+      val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setParallelism(parallelism)
+      env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+      val stream: DataStream[String] = env.readTextFile("./src/test/resources/randomJsonsFile.txt")
+      val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
+      val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+        new AscendingTimestampExtractor[LogEntry] {
+          override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
+            ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+          }
+        }).keyBy(_.service)
+
+      val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+      alerts.rebalance.print
+      mapOfAsserts(alerts)
+      Assert.assertNotNull(env.execute())
+    }
   }
 }

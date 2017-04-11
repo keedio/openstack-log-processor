@@ -1,23 +1,27 @@
 package com.keedio.flink
 
 import java.sql.Timestamp
+import java.util.concurrent.TimeUnit
 
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
+import com.keedio.flink.cep.alerts.ErrorAlert
 import com.keedio.flink.cep.patterns.ErrorAlertPattern
 import com.keedio.flink.cep.{IAlert, IAlertPattern}
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
 import com.keedio.flink.utils._
+import org.apache.flink.api.common.restartstrategy.RestartStrategies
+import org.apache.flink.api.common.time.Time
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
-import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
+import org.apache.flink.streaming.api.{CheckpointingMode, TimeCharacteristic}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
@@ -36,24 +40,36 @@ object OpenStackLogProcessor {
   val LOG: Logger = Logger.getLogger(classOf[OpenStackLogProcessor])
 
   def main(args: Array[String]): Unit = {
-    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    // Use the Measurement Timestamp of the Event (set a notion of time)
-    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
-
     //From the command line arguments
     val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
     val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
+    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
+    val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
+
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    env.enableCheckpointing(1000)
+    env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
+    env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
+      RESTART_ATTEMPTS,
+      Time.of(RESTART_DELAY, TimeUnit.MINUTES)
+    ))
+
+    // Use the Measurement Timestamp of the Event (set a notion of time)
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val stream: DataStream[String] = env
       .addSource(new FlinkKafkaConsumer08[String](
-        parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties))
+        parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)).rebalance
 
     //parse string to logentry entitie
     val streamOfLogs: DataStream[LogEntry] = stream.map(string => {
       LogEntry(string, parameterTool.getBoolean("parseBody", true))
     })
+      .filter(logEntry => logEntry.isValid())
+      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
+      .rebalance
 
     //take a stream and produce a new stream with timestamped elements and watermarks
     val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
@@ -61,7 +77,7 @@ object OpenStackLogProcessor {
         override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
           ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
         }
-      })
+      }).keyBy(_.service)
 
 
     //will populate tables basis on column id : 1h, 6h, ...
@@ -117,6 +133,11 @@ object OpenStackLogProcessor {
         .build()
     })
 
+    /**
+      * COLS:   |  id    |service|  loglevel|  region| ts   | tfhours   | timeframe| TTL(hiden)
+      * VALUES: |  ?     | ?     |    ?     |    ?   | now()|    ?      |    ?     |    ?
+      * TUPLE:  | timekey|service|  loglevel|  region|      | timestamp | timeframe|    ttl
+      */
     listStackService.foreach(t => {
       CassandraSink.addSink(t.javaStream).setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, " +
         "service, ts, " +
@@ -146,7 +167,17 @@ object OpenStackLogProcessor {
       .build()
 
 
-    toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern).rebalance.print
+
+    //CEP
+    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped,
+      new ErrorAlertPattern).rebalance
+    val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString)
+    val myProducer = new FlinkKafkaProducer08[String](
+      parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
+    // the following is necessary for at-least-once delivery guarantee
+    myProducer.setLogFailuresOnly(false) // "false" by default
+    myProducer.setFlushOnCheckpoint(true) // "false" by default
+    streamErrorString.addSink(myProducer)
 
     //execute
     try {
@@ -172,11 +203,8 @@ object OpenStackLogProcessor {
     */
   def logEntryToTupleNC(
                          streamOfLogs: DataStream[LogEntry], timeKey: String, az: String,
-                         region      : String): DataStream[Tuple5[String, String, String, String, String]] = {
-    streamOfLogs
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(new RichMapFunctionNC(timeKey, az, region))
+                         region: String): DataStream[Tuple5[String, String, String, String, String]] = {
+    streamOfLogs.map(new RichMapFunctionNC(timeKey, az, region))
   }
 
   /**
@@ -190,10 +218,7 @@ object OpenStackLogProcessor {
     */
   def logEntryToTupleSC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String):
   DataStream[Tuple5[String, String, String, String, String]] = {
-    streamOfLogs
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(new RichMapFunctionSC(timeKey, az, region))
+    streamOfLogs.map(new RichMapFunctionSC(timeKey, az, region))
   }
 
   /**
@@ -205,10 +230,7 @@ object OpenStackLogProcessor {
     */
   def logEntryToTupleRL(streamOfLogs: DataStream[LogEntry], region: String): DataStream[Tuple7[String, String,
     String, String, String, Timestamp, String]] = {
-    streamOfLogs
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .map(new RichMapFunctionRL(region))
+    streamOfLogs.map(new RichMapFunctionRL(region))
   }
 
   /**
@@ -220,36 +242,44 @@ object OpenStackLogProcessor {
     * @param region
     * @return
     */
-  def logEntryToTupleSS(streamOfLogs: DataStream[LogEntry], timeKey: String, valKey: Int, region: String):
+  def logEntryToTupleSS(
+                         streamOfLogs: DataStream[LogEntry], timeKey: String, valKey: Int,
+                         region: String):
   DataStream[Tuple7[String, String, String, String, Int, String, Int]] = {
-    streamOfLogs
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
+    streamOfLogs.filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
       .map(new RichMapFunctionSS(timeKey, valKey, region))
       .filter(t => t.f6 > 0)
   }
 
+  /**
+    * create a Tuple for alerts_services from Alerts stream
+    *
+    * @param streamOfErrorAlerts
+    * @return
+    */
+  def errorAlertToTuple(streamOfErrorAlerts: DataStream[ErrorAlert]): DataStream[Tuple5[String, String, String,
+    String, String]] = {
+    streamOfErrorAlerts.map(new RichMapFunctionAlertServices)
+  }
 
   /**
-  * Generate DataSteam of Alerts
-  * @param streamOfLogs
-  * @param alertPattern
-  * @param typeInfo
-  * @tparam T
-  * @return
+    * Generate DataSteam of Alerts
+    *
+    * @param streamOfLogsTimestamped
+    * @param alertPattern
+    * @param typeInfo
+    * @tparam T
+    * @return
     */
-  def toAlertStream[T <: IAlert](streamOfLogs: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
+  def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
                                 (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
-
-    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogs, alertPattern.getEventPattern())
-
+    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
+      alertPattern.getEventPattern())
     val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
       override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
     })
     alerts
   }
-
 
 }
 

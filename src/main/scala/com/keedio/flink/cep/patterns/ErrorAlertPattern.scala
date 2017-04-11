@@ -20,6 +20,11 @@ class ErrorAlertPattern extends IAlertPattern[LogEntry, ErrorAlert] {
     new ErrorAlert(first, second)
   }
 
+  /**
+    * Genereate an Alert if and only if it matches two consecutive LogEntries for the same service wHich severity is
+    * ERROR and Logentries have to occur within a time interval of 10 minutes.
+    * @return
+    */
   override def getEventPattern(): Pattern[LogEntry, _] = {
     Pattern
       .begin[LogEntry]("First Event")
@@ -30,10 +35,4 @@ class ErrorAlertPattern extends IAlertPattern[LogEntry, ErrorAlert] {
       .where(event => event.severity == SyslogCode.numberOfSeverity("ERROR"))
       .within(Time.minutes(10))
   }
-
-  override def getAlertTargetType(): Class[ErrorAlert] = {
-    classOf[ErrorAlert]
-  }
-
-
 }

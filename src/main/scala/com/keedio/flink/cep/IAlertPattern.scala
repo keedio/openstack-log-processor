@@ -28,10 +28,4 @@ trait IAlertPattern[TEventType, TAlertType <: IAlert] extends Serializable{
     */
   def getEventPattern(): Pattern[TEventType, _]
 
-  /**
-    * Returns the alert class.
-    * @return Class Type of the Alert
-    */
-  def getAlertTargetType():  Class[TAlertType]
-
 }
