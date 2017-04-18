@@ -27,7 +27,7 @@ class LogEntry(
                 val service: String,
                 val id: String,
                 val facility: String,
-                val timestamp: String) {
+                val timestamp: String){
 
   def this() = this("", "", "", "", "", "", "", "", "", "", "")
 
@@ -35,8 +35,9 @@ class LogEntry(
     !timestamp.isEmpty && !severity.isEmpty && !body.isEmpty
   }
 
-  override def toString = s"$timestamp, $hostname, $severity, $protocol, $port, $sender, $service, $id, $facility, $body"
-
+  //override def toString = s"$timestamp, $hostname, $severity, $protocol, $port, $sender, $service, $id, $facility, $body"
+  override def toString = new String(
+    s"""{\"severity\":\"$severity\",\"body\":\"$body\",\"spriority\":\"$spriority\",\"hostname\":\"$hostname\",\"protocol\":\"$protocol\",\"port\":\"$port\",\"sender\":\"$sender",\"service\":\"$service\",\"id\":\"$id\",\"facility\":\"$facility\",\"timestamp\":\"$timestamp\"}""")
 
   def canEqual(other: Any): Boolean = other.isInstanceOf[LogEntry]
 

@@ -125,4 +125,10 @@ class LogEntryTest {
       " Compute_service record updated for overcloud-compute-2.localdomain:overcloud-compute-2.localdomain")
   }
 
+  @Test
+  def testToStringFromLogEntry = {
+    val logEntry: LogEntry = LogEntry(valid_json_logEntry)
+    println(logEntry.toString)
+  }
+
 }

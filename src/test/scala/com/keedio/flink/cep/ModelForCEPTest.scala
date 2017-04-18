@@ -54,11 +54,11 @@ class ModelForCEPTest {
       val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
       env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
       val listOfTimestamps: Seq[String] = UtilsForTest.generateTimestamps()
-      val listOfDummyLogs: Seq[String] = UtilsForTest.generateListOflogs(listOfTimestamps)
+      val listOfDummyLogs: Seq[String] = scala.util.Random.shuffle(UtilsForTest.generateListOflogs(listOfTimestamps))
       val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
 
       //parse json as LogEntry
-      val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
+      val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).keyBy(_.service)
 
       val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
         new AscendingTimestampExtractor[LogEntry] {

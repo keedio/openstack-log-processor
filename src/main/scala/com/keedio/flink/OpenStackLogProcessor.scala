@@ -13,14 +13,14 @@ import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
 import com.keedio.flink.utils._
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
-import org.apache.flink.api.common.time.Time
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
-import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
+import org.apache.flink.streaming.api.watermark.Watermark
 import org.apache.flink.streaming.api.{CheckpointingMode, TimeCharacteristic}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
@@ -47,38 +47,33 @@ object OpenStackLogProcessor {
     val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.enableCheckpointing(1000)
+    env.enableCheckpointing(10000)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
       RESTART_ATTEMPTS,
-      Time.of(RESTART_DELAY, TimeUnit.MINUTES)
+      org.apache.flink.api.common.time.Time.of(RESTART_DELAY, TimeUnit.MINUTES)
     ))
-
     // Use the Measurement Timestamp of the Event (set a notion of time)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
-
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
-    val stream: DataStream[String] = env
-      .addSource(new FlinkKafkaConsumer08[String](
-        parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)).rebalance
+    val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
+      parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
+
+    val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
     //parse string to logentry entitie
-    val streamOfLogs: DataStream[LogEntry] = stream.map(string => {
+    val streamOfLogs0: DataStream[LogEntry] = stream.map(string => {
       LogEntry(string, parameterTool.getBoolean("parseBody", true))
     })
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-      .rebalance
 
-    //take a stream and produce a new stream with timestamped elements and watermarks
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
-      new AscendingTimestampExtractor[LogEntry] {
-        override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
-          ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
-        }
-      }).keyBy(_.service)
-
+  val streamOfLogs: DataStream[LogEntry] =  streamOfLogs0.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[LogEntry] {
+    val maxTimeLag = 5000L
+    override def getCurrentWatermark: Watermark = new Watermark(System.currentTimeMillis() - maxTimeLag)
+    override def extractTimestamp(logEntry: LogEntry, previousLogEntryTimestamp: Long): Long = ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+  })
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
@@ -169,13 +164,12 @@ object OpenStackLogProcessor {
 
 
     //CEP
-    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped,
-      new ErrorAlertPattern).rebalance
+    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString)
     val myProducer = new FlinkKafkaProducer08[String](
       parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
-    myProducer.setLogFailuresOnly(false) // "false" by default
+    myProducer.setLogFailuresOnly(true) // "false" by default
     myProducer.setFlushOnCheckpoint(true) // "false" by default
     streamErrorString.addSink(myProducer)
 
@@ -242,24 +236,12 @@ object OpenStackLogProcessor {
     * @param region
     * @return
     */
-  def logEntryToTupleSS(
-                         streamOfLogs: DataStream[LogEntry], timeKey: String, valKey: Int,
-                         region: String):
+  def logEntryToTupleSS(streamOfLogs: DataStream[LogEntry], timeKey: String, valKey: Int,region: String):
   DataStream[Tuple7[String, String, String, String, Int, String, Int]] = {
-    streamOfLogs.filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
+    streamOfLogs
+      .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
       .map(new RichMapFunctionSS(timeKey, valKey, region))
       .filter(t => t.f6 > 0)
-  }
-
-  /**
-    * create a Tuple for alerts_services from Alerts stream
-    *
-    * @param streamOfErrorAlerts
-    * @return
-    */
-  def errorAlertToTuple(streamOfErrorAlerts: DataStream[ErrorAlert]): DataStream[Tuple5[String, String, String,
-    String, String]] = {
-    streamOfErrorAlerts.map(new RichMapFunctionAlertServices)
   }
 
   /**
