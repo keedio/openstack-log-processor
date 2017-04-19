@@ -49,7 +49,7 @@ class ModelForCEPTest {
     * generate alert.
     */
   @Test
-  def toErrorAlertStreamTest() = {
+  def toErrorAlertStreamAscendingTimestampsIterateTest() = {
     for (i <- 1 to 100) {
       val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
       env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
@@ -94,7 +94,21 @@ class ModelForCEPTest {
       "\"service\":\"Nova\",\"id\":\"1844a3ce-c2ae-4417-8c6b-0243491bfec2\",\"facility\":\"23\"," +
       "\"timestamp\":\"2017-04-06T12:53:32.420009+00:00\"}"
 
-    val listOfDummyLogs: Seq[String] = Seq(json0, json1)
+    val json2 = "{\"severity\":\"7\",\"body\":\"nova-compute - - - 2017-04-06 15:10:47.422 595544 ERROR " +
+      "oslo_messaging._drivers.amqpdriver [req-c4434725-9b8d-4fe3-b41c-fcf7b89869a5 - - - - -]\"," +
+      "\"spriority\":\"191\"," +
+      "\"hostname\":\"overcloud-compute-1\",\"protocol\":\"TCP\",\"port\":\"7790\",\"sender\":\"/192.168.1.16\"," +
+      "\"service\":\"Nova\",\"id\":\"1844a3ce-c2ae-4417-8c6b-0243491bfec2\",\"facility\":\"23\"," +
+      "\"timestamp\":\"2017-04-06T12:53:32.420009+00:00\"}"
+
+    val json3 = "{\"severity\":\"7\",\"body\":\"nova-compute - - - 2017-04-06 15:45:47.422 595544 ERROR " +
+      "oslo_messaging._drivers.amqpdriver [req-c4434725-9b8d-4fe3-b41c-fcf7b89869a5 - - - - -]\"," +
+      "\"spriority\":\"191\"," +
+      "\"hostname\":\"overcloud-compute-1\",\"protocol\":\"TCP\",\"port\":\"7790\",\"sender\":\"/192.168.1.16\"," +
+      "\"service\":\"Nova\",\"id\":\"1844a3ce-c2ae-4417-8c6b-0243491bfec2\",\"facility\":\"23\"," +
+      "\"timestamp\":\"2017-04-06T12:53:32.420009+00:00\"}"
+
+    val listOfDummyLogs: Seq[String] = Seq(json0, json1, json2, json3)
     val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
     val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
     streamOfLogs.print
