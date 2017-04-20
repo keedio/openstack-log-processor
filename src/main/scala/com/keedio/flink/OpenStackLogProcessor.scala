@@ -18,8 +18,9 @@ import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
-import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
+import org.apache.flink.streaming.api.watermark.Watermark
 import org.apache.flink.streaming.api.{CheckpointingMode, TimeCharacteristic}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
@@ -55,26 +56,22 @@ object OpenStackLogProcessor {
     // Use the Measurement Timestamp of the Event (set a notion of time)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
-    //    //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
-    //    val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
-    //      parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
+        //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
+        val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
+          parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
 
-    val kafkaSource: FlinkKafkaConsumer08[LogEntry] = new FlinkKafkaConsumer08[LogEntry](
-      parameterTool.getRequired("topic"), new LogEntrySchema(parameterTool.getBoolean("parseBody", true)),
-      parameterTool.getProperties)
+    val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
-    val kafkaSourceAssignedTimesTamp: FlinkKafkaConsumerBase[LogEntry] = kafkaSource.assignTimestampsAndWatermarks(new AscendingTimestampExtractor[LogEntry] {
-      override def extractAscendingTimestamp(t: LogEntry): Long = {
-        ProcessorHelper.toTimestamp(t.timestamp).getTime
-      }
-    })
-
-
-    val stream: DataStream[LogEntry] = env.addSource(kafkaSourceAssignedTimesTamp)
-
-    val streamOfLogs: DataStream[LogEntry] = stream
+    val streamOfLogs0: DataStream[LogEntry] = stream
+      .map(s => LogEntry(s,parameterTool.getBoolean("parseBody", true)))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
+
+
+    val streamOfLogs: DataStream[LogEntry] =  streamOfLogs0.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[LogEntry] {
+      override def extractTimestamp(t: LogEntry, l: Long): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+      override def getCurrentWatermark: Watermark = new Watermark(System.currentTimeMillis() - 60 * 60 * 1000L)
+    })
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
@@ -263,7 +260,6 @@ object OpenStackLogProcessor {
     })
     alerts
   }
-
 }
 
 
