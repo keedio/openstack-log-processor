@@ -18,9 +18,9 @@ import org.apache.flink.api.java.tuple._
 import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
-import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks
+import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
-import org.apache.flink.streaming.api.watermark.Watermark
+import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.api.{CheckpointingMode, TimeCharacteristic}
 import org.apache.flink.streaming.connectors.cassandra.{CassandraSink, ClusterBuilder}
 import org.apache.flink.streaming.connectors.kafka._
@@ -68,10 +68,16 @@ object OpenStackLogProcessor {
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
 
 
-    val streamOfLogs: DataStream[LogEntry] =  streamOfLogs0.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[LogEntry] {
-      override def extractTimestamp(t: LogEntry, l: Long): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-      override def getCurrentWatermark: Watermark = new Watermark(System.currentTimeMillis() - 60 * 60 * 1000L)
+//    val streamOfLogs: DataStream[LogEntry] =  streamOfLogs0.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[LogEntry] {
+//      override def extractTimestamp(t: LogEntry, l: Long): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+//      override def getCurrentWatermark: Watermark = new Watermark(System.currentTimeMillis() - 60 * 60 * 1000L)
+//    })
+
+
+    val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.minutes(10)) {
+      override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
     })
+
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
