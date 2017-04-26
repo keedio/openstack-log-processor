@@ -45,9 +45,10 @@ object OpenStackLogProcessor {
     val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
     val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
     val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
+    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.enableCheckpointing(10000)
+    env.enableCheckpointing(100000)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
       RESTART_ATTEMPTS,
@@ -56,28 +57,21 @@ object OpenStackLogProcessor {
     // Use the Measurement Timestamp of the Event (set a notion of time)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
-        //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
-        val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
-          parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
+    //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
+    val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
+      parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
 
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
     val streamOfLogs0: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s,parameterTool.getBoolean("parseBody", true)))
+      .map(s => LogEntry(s, parameterTool.getBoolean("parseBody", true)))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
 
-
-//    val streamOfLogs: DataStream[LogEntry] =  streamOfLogs0.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks[LogEntry] {
-//      override def extractTimestamp(t: LogEntry, l: Long): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-//      override def getCurrentWatermark: Watermark = new Watermark(System.currentTimeMillis() - 60 * 60 * 1000L)
-//    })
-
-
-    val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.minutes(10)) {
-      override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-    })
-
+    val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(
+      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.minutes(MAXOUTOFORDENESS)) {
+        override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+      })
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
