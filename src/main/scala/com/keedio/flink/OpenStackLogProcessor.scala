@@ -6,8 +6,7 @@ import java.util.concurrent.TimeUnit
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
-import com.keedio.flink.cep.alerts.ErrorAlert
-import com.keedio.flink.cep.patterns.ErrorAlertPattern
+import com.keedio.flink.cep.patterns.ErrorAlertCreateVMPattern
 import com.keedio.flink.cep.{IAlert, IAlertPattern}
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
@@ -162,7 +161,8 @@ object OpenStackLogProcessor {
 
 
     //CEP
-    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
+    //val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
+    val streamOfErrorAlerts = toAlertStream(streamOfLogs, new  ErrorAlertCreateVMPattern).rebalance
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString)
     val myProducer = new FlinkKafkaProducer08[String](
       parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())

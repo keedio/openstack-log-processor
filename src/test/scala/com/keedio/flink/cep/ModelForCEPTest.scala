@@ -2,13 +2,14 @@ package com.keedio.flink.cep
 
 import com.keedio.flink.OpenStackLogProcessor._
 import com.keedio.flink.cep.alerts.ErrorAlert
-import com.keedio.flink.cep.patterns.ErrorAlertPattern
+import com.keedio.flink.cep.patterns.{ErrorAlertCreateVMPattern, ErrorAlertPattern}
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.utils._
 import org.apache.flink.api.scala.createTypeInformation
 import org.apache.flink.streaming.api.TimeCharacteristic
-import org.apache.flink.streaming.api.functions.timestamps.AscendingTimestampExtractor
+import org.apache.flink.streaming.api.functions.timestamps.{AscendingTimestampExtractor, BoundedOutOfOrdernessTimestampExtractor}
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
+import org.apache.flink.streaming.api.windowing.time.Time
 import org.hamcrest.MatcherAssert._
 import org.hamcrest.number.OrderingComparisons._
 import org.joda.time.{DateTime, Minutes}
@@ -185,5 +186,81 @@ class ModelForCEPTest {
       mapOfAsserts(alerts)
       Assert.assertNotNull(env.execute())
     }
+  }
+
+  @Test
+  def toErrorAlertCreateVMPattern = {
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+
+    val json0 = "{\"severity\":\"7\",\"body\":\"nova-compute - - - 2017-04-26 14:57:06.321 666666 ERROR nova.compute.keedio_redhat [ Generating synthetic log CEP_ID=510096db588437037d50d854832b3315 ]\",\"spriority\":\"191\",\"hostname\":\"overcloud-compute-1\",\"protocol\":\"TCP\",\"port\":\"7790\",\"sender\":\"/192.168.1.16\",\"service\":\"Nova\",\"id\":\"8e88a611-921d-49dc-bfed-043a998a0abb\",\"facility\":\"23\",\"timestamp\":\"2017-04-26T14:57:13.794313+00:00\"}"
+
+    val json1 = "{\"severity\":\"7\",\"body\":\"neutron - - - 2017-04-26 14:57:09.123 666667 INFO neutron.network.keedio_redhat [ Generating synthetic log CEP_ID=510096db588437037d50d854832b3315 ]\",\"spriority\":\"191\",\"hostname\":\"overcloud-controller-1\",\"protocol\":\"TCP\",\"port\":\"7793\",\"sender\":\"/192.168.1.13\",\"service\":\"Neutron\",\"id\":\"b3e84f42-a83a-4256-ad40-b70fe412fefc\",\"facility\":\"23\",\"timestamp\":\"2017-04-26T14:57:10.115464+00:00\"}"
+
+    val listOfDummyLogs: Seq[String] = Seq(json0, json1)
+    val stream: DataStream[String] = env.fromCollection(listOfDummyLogs)
+    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string))
+    streamOfLogs.rebalance.print
+
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+      new AscendingTimestampExtractor[LogEntry] {
+        override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
+          ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+        }
+      }) //.keyBy(_.service)
+
+    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    alerts.rebalance.print
+
+    //    mapOfAsserts(alerts)
+    Assert.assertNotNull(env.execute())
+  }
+
+  @Test
+  def toErrorAlertCreateVMPatternMutiples = {
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+    val stream: DataStream[String] = env.readTextFile("./src/test/resources/randomJsonsFile2.txt")
+
+    val streamOfLogs: DataStream[LogEntry] = stream.map(string => LogEntry(string)).rebalance
+    streamOfLogs.rebalance.print
+
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+      new AscendingTimestampExtractor[LogEntry] {
+        override def extractAscendingTimestamp(logEntry: LogEntry): Long = {
+          ProcessorHelper.toTimestamp(logEntry.timestamp).getTime
+        }
+      }) //.keyBy(_.service)
+
+    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    alerts.rebalance.print
+
+    //    mapOfAsserts(alerts)
+    Assert.assertNotNull(env.execute())
+  }
+
+
+  @Test
+  def toErrorAlertCreateVMPatternMutiplesBoundOutofOrderness = {
+    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
+    val stream: DataStream[String] = env.readTextFile("./src/test/resources/randomJsonsFile2.txt")
+
+    val streamOfLogs: DataStream[LogEntry] = stream
+      .map(s => LogEntry(s))
+      .filter(logEntry => logEntry.isValid())
+      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))//.rebalance
+    streamOfLogs.rebalance.print
+
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(0)) {
+        override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+      }) //.keyBy(_.service)
+
+    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    alerts.rebalance.print
+
+    //    mapOfAsserts(alerts)
+    Assert.assertNotNull(env.execute())
   }
 }
