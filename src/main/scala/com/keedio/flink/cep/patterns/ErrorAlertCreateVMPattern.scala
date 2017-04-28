@@ -29,19 +29,41 @@ class ErrorAlertCreateVMPattern extends IAlertPattern[LogEntry, ErrorAlert] {
     * @return
     */
   override def getEventPattern(): Pattern[LogEntry, _] = {
+    //        Pattern
+    //          .begin[LogEntry]("First Event")
+    //          .subtype(classOf[LogEntry])
+    //          .where(event => event.severity == SyslogCode.numberOfSeverity("ERROR") && event.service == "Nova" && event.body.contains("CEP_ID"))
+    //          .next("Second Event")
+    //          .subtype(classOf[LogEntry])
+    //          .where(
+    //            (event, ctx) => {
+    //               event.severity == SyslogCode.numberOfSeverity("INFO") && event.service == "Neutron" && event.body.contains("CEP_ID") &&
+    //              ctx.getEventsForPattern("First Event").asScala.toSeq.exists(
+    //                logEntry => logEntry.body.split("CEP_ID=")(1).split("\\s+")(0) == event.body.split("CEP_ID=")(1).split("\\s+")(0))
+    //            }
+    //          )
+    //          .within(Time.minutes(10))
+    //      }
+
     Pattern
       .begin[LogEntry]("First Event")
       .subtype(classOf[LogEntry])
-      .where(event => event.severity == SyslogCode.numberOfSeverity("ERROR") && event.service == "Nova" && event.body.contains("CEP_ID"))
-      .next("Second Event")
+      .where(event => event.severity == SyslogCode.numberOfSeverity("ERROR"))
+      .where(event => event.service == "Nova")
+      .where(event => event.body.contains("CEP_ID"))
+      .followedBy("Second Event")
       .subtype(classOf[LogEntry])
+      .where(event => event.severity == SyslogCode.numberOfSeverity("INFO"))
+      .where(event => event.service == "Neutron")
+      .where(event => event.body.contains("CEP_ID"))
       .where(
         (event, ctx) => {
-           event.severity == SyslogCode.numberOfSeverity("INFO") && event.service == "Neutron" && event.body.contains("CEP_ID") &&
-          ctx.getEventsForPattern("First Event").asScala.toSeq.exists(
-            logEntry => logEntry.body.split("CEP_ID=")(1).split("\\s+")(0) == event.body.split("CEP_ID=")(1).split("\\s+")(0))
+          val matches: Seq[LogEntry] = ctx.getEventsForPattern("First Event").asScala.toSeq.filter(_.body.contains("CEP_ID="))
+          matches.exists(logEntry => logEntry.body.split("CEP_ID=")(1).split("\\s+")(0) == event.body.split("CEP_ID=")(1).split("\\s+")(0))
         }
       )
       .within(Time.minutes(10))
   }
+
+
 }

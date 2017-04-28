@@ -249,18 +249,15 @@ class ModelForCEPTest {
     val streamOfLogs: DataStream[LogEntry] = stream
       .map(s => LogEntry(s))
       .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))//.rebalance
+      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
     streamOfLogs.rebalance.print
 
     val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
       new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(0)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-      }) //.keyBy(_.service)
-
+      })
     val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
     alerts.rebalance.print
-
-    //    mapOfAsserts(alerts)
     Assert.assertNotNull(env.execute())
   }
 }

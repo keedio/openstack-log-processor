@@ -26,8 +26,8 @@ import org.apache.flink.streaming.connectors.kafka._
 import org.apache.flink.streaming.util.serialization._
 import org.apache.log4j.Logger
 
+import scala.collection.JavaConverters._
 import scala.collection.Map
-
 /**
   * Created by luislazaro on 8/2/17.
   * lalazaro@keedio.com
@@ -60,6 +60,11 @@ object OpenStackLogProcessor {
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
       parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
 
+//    val kafkaSource: FlinkKafkaConsumer08[LogEntry] = new FlinkKafkaConsumer08[LogEntry](
+//      parameterTool.getRequired("topic"),
+//      new LogEntrySchema(parameterTool.getBoolean("parseBody", true)),
+//      parameterTool.getProperties)
+
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
     val streamOfLogs0: DataStream[LogEntry] = stream
@@ -68,7 +73,7 @@ object OpenStackLogProcessor {
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
 
     val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(
-      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.minutes(MAXOUTOFORDENESS)) {
+      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
 
@@ -162,23 +167,33 @@ object OpenStackLogProcessor {
 
     //CEP
     //val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
-    val streamOfErrorAlerts = toAlertStream(streamOfLogs, new  ErrorAlertCreateVMPattern).rebalance
+    val streamOfErrorAlerts = toAlertStream(streamOfLogs, new  ErrorAlertCreateVMPattern)
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString)
     val myProducer = new FlinkKafkaProducer08[String](
       parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
-    myProducer.setLogFailuresOnly(true) // "false" by default
-    myProducer.setFlushOnCheckpoint(true) // "false" by default
+    myProducer.setLogFailuresOnly(false) // "false" by default
+    myProducer.setFlushOnCheckpoint(false) // "false" by defaultF
     streamErrorString.addSink(myProducer)
+//    streamErrorString.rebalance.writeAsText("/opt/flink/log/streamErrorStringAlerts.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
 
     //execute
+//    try {
+//      env.execute(s"OpensStack Log Processor :" +
+//        s" kafka ${parameterTool.getProperties.getProperty("bootstrap.servers")}," +
+//        s" zookeeper ${parameterTool.getProperties.getProperty("zookeeper.connect")}," +
+//        s" topic ${parameterTool.getRequired("topic")}," +
+//        s" cassandra ${parameterTool.getRequired("cassandra.host")}" +
+//        s" : ${CASSANDRAPORT} ")
+//    } catch {
+//      case e: DriverException => LOG.error("", e)
+//    }
+
+    val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
+    val listPrope: Seq[String] = propertiesNames.map(key => s" ${key}  : " +   parameterTool.getProperties.getProperty(key.toString))
+
     try {
-      env.execute(s"OpensStack Log Processor :" +
-        s" kafka ${parameterTool.getProperties.getProperty("bootstrap.servers")}," +
-        s" zookeeper ${parameterTool.getProperties.getProperty("zookeeper.connect")}," +
-        s" topic ${parameterTool.getRequired("topic")}," +
-        s" cassandra ${parameterTool.getRequired("cassandra.host")}" +
-        s" : ${CASSANDRAPORT} ")
+      env.execute(s"OpensStack Log Processor - " + listPrope.mkString(";"))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
