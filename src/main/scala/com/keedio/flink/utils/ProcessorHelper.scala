@@ -87,7 +87,7 @@ object ProcessorHelper {
       new Timestamp(a.getTime)
     } catch {
       case t: Throwable => {
-        LOG.error(s"Cannot parse syslog.timestamp $dateAsString, supplying Timestamp with Epoch Time.", t)
+        LOG.error(s"Cannot parse syslog.timestamp \'$dateAsString\', supplying Timestamp with Epoch Time.", t)
         new Timestamp(0L)
       }
     }

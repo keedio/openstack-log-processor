@@ -27,7 +27,7 @@ class LogEntry(
                 val service: String,
                 val id: String,
                 val facility: String,
-                val timestamp: String) {
+                val timestamp: String){
 
   def this() = this("", "", "", "", "", "", "", "", "", "", "")
 
@@ -35,7 +35,33 @@ class LogEntry(
     !timestamp.isEmpty && !severity.isEmpty && !body.isEmpty
   }
 
-  override def toString = s"$timestamp, $hostname, $severity, $protocol, $port, $sender, $service, $id, $facility, $body"
+  //override def toString = s"$timestamp, $hostname, $severity, $protocol, $port, $sender, $service, $id, $facility, $body"
+  override def toString = new String(
+    s"""{\"severity\":\"$severity\",\"body\":\"$body\",\"spriority\":\"$spriority\",\"hostname\":\"$hostname\",\"protocol\":\"$protocol\",\"port\":\"$port\",\"sender\":\"$sender",\"service\":\"$service\",\"id\":\"$id\",\"facility\":\"$facility\",\"timestamp\":\"$timestamp\"}""")
+
+  def canEqual(other: Any): Boolean = other.isInstanceOf[LogEntry]
+
+  override def equals(other: Any): Boolean = other match {
+    case that: LogEntry =>
+      (that canEqual this) &&
+        severity == that.severity &&
+        body == that.body &&
+        spriority == that.spriority &&
+        hostname == that.hostname &&
+        protocol == that.protocol &&
+        port == that.port &&
+        sender == that.sender &&
+        service == that.service &&
+        id == that.id &&
+        facility == that.facility &&
+        timestamp == that.timestamp
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    val state = Seq(severity, body, spriority, hostname, protocol, port, sender, service, id, facility, timestamp)
+    state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+  }
 }
 
 object LogEntry extends Serializable {
