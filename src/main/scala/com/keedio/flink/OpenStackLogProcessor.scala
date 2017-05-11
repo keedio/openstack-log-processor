@@ -64,13 +64,15 @@ object OpenStackLogProcessor {
 
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
-    val streamOfLogs0: DataStream[LogEntry] = stream
+    //parse jsones as logentries
+    val streamOfLogs: DataStream[LogEntry] = stream
       .map(s => LogEntry(s, parameterTool.getBoolean("parseBody", true)))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
 
-    val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(
+    //assign and emit watermarks: events may arrive unordered
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
       new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
@@ -82,16 +84,16 @@ object OpenStackLogProcessor {
 
     //Create a stream of data for each id and map that stream to a specific flink.tuple.
     val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (logEntryToTupleNC(streamOfLogs0, e._1, "az1", "boston"), e._2))
+      .map(e => (logEntryToTupleNC(streamOfLogs, e._1, "az1", "boston"), e._2))
 
     val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (logEntryToTupleSC(streamOfLogs0, e._1, "az1", "boston"), e._2))
+      .map(e => (logEntryToTupleSC(streamOfLogs, e._1, "az1", "boston"), e._2))
 
     val listStackService: Iterable[DataStream[Tuple7[String, String, String, String, Int, String, Int]]] = listOfKeys
-      .map(e => logEntryToTupleSS(streamOfLogs0, e._1, e._2, "boston"))
+      .map(e => logEntryToTupleSS(streamOfLogs, e._1, e._2, "boston"))
 
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
-      logEntryToTupleRL(streamOfLogs0, "boston")
+      logEntryToTupleRL(streamOfLogs, "boston")
 
     //SINKING
     listNodeCounter.foreach(t => {
@@ -163,10 +165,8 @@ object OpenStackLogProcessor {
       .build()
 
 
-
     //CEP
-    //val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
-    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs, new ErrorAlertCreateVMPattern)
+    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
     val myProducer = new FlinkKafkaProducer08[String](
       parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
@@ -177,10 +177,10 @@ object OpenStackLogProcessor {
 
     //properties of job client
     val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
-    val listPrope: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
+    val listPropertiesFromCli: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
 
     try {
-      env.execute(s"OpensStack Log Processor - " + listPrope.mkString(";"))
+      env.execute(s"OpensStack Log Processor - " + listPropertiesFromCli.mkString(";"))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
