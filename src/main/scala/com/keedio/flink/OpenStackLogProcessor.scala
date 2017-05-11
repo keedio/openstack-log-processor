@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
+import com.keedio.flink.cep.alerts.ErrorAlert
 import com.keedio.flink.cep.patterns.ErrorAlertCreateVMPattern
 import com.keedio.flink.cep.{IAlert, IAlertPattern}
 import com.keedio.flink.entities.LogEntry
@@ -28,6 +29,7 @@ import org.apache.log4j.Logger
 
 import scala.collection.JavaConverters._
 import scala.collection.Map
+
 /**
   * Created by luislazaro on 8/2/17.
   * lalazaro@keedio.com
@@ -60,22 +62,21 @@ object OpenStackLogProcessor {
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
       parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
 
-//    val kafkaSource: FlinkKafkaConsumer08[LogEntry] = new FlinkKafkaConsumer08[LogEntry](
-//      parameterTool.getRequired("topic"),
-//      new LogEntrySchema(parameterTool.getBoolean("parseBody", true)),
-//      parameterTool.getProperties)
-
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
-    val streamOfLogs0: DataStream[LogEntry] = stream
+    //parse jsones as logentries
+    val streamOfLogs: DataStream[LogEntry] = stream
       .map(s => LogEntry(s, parameterTool.getBoolean("parseBody", true)))
       .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).rebalance
+      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
+      .rebalance
 
-    val streamOfLogs: DataStream[LogEntry] = streamOfLogs0.assignTimestampsAndWatermarks(
+    //assign and emit watermarks: events may arrive unordered
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
       new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
+      .setParallelism(1)
 
     //will populate tables basis on column id : 1h, 6h, ...
     val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
@@ -164,36 +165,22 @@ object OpenStackLogProcessor {
       .build()
 
 
-
     //CEP
-    //val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogs.keyBy(_.service), new ErrorAlertPattern).rebalance
-    val streamOfErrorAlerts = toAlertStream(streamOfLogs, new  ErrorAlertCreateVMPattern)
-    val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString)
+    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
     val myProducer = new FlinkKafkaProducer08[String](
       parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
     myProducer.setFlushOnCheckpoint(false) // "false" by defaultF
     streamErrorString.addSink(myProducer)
-//    streamErrorString.rebalance.writeAsText("/opt/flink/log/streamErrorStringAlerts.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
 
-    //execute
-//    try {
-//      env.execute(s"OpensStack Log Processor :" +
-//        s" kafka ${parameterTool.getProperties.getProperty("bootstrap.servers")}," +
-//        s" zookeeper ${parameterTool.getProperties.getProperty("zookeeper.connect")}," +
-//        s" topic ${parameterTool.getRequired("topic")}," +
-//        s" cassandra ${parameterTool.getRequired("cassandra.host")}" +
-//        s" : ${CASSANDRAPORT} ")
-//    } catch {
-//      case e: DriverException => LOG.error("", e)
-//    }
-
+    //properties of job client
     val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
-    val listPrope: Seq[String] = propertiesNames.map(key => s" ${key}  : " +   parameterTool.getProperties.getProperty(key.toString))
+    val listPropertiesFromCli: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
 
     try {
-      env.execute(s"OpensStack Log Processor - " + listPrope.mkString(";"))
+      env.execute(s"OpensStack Log Processor - " + listPropertiesFromCli.mkString(";"))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
@@ -275,6 +262,25 @@ object OpenStackLogProcessor {
     })
     alerts
   }
+
+  /**
+    * Generate DataStream of late elements
+    */
+  def toLateElementsStream[T <: IAlert](tag: String, streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
+                                       (implicit typeInfo: TypeInformation[T]): DataStream[LogEntry] = {
+    val lateOutputTag: OutputTag[LogEntry] = new OutputTag[LogEntry](tag)
+    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
+      alertPattern.getEventPattern())
+      .sideOutputLateData(lateOutputTag)
+
+    val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
+      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
+    })
+
+    val lateStream: DataStream[LogEntry] = tempPatternStream.getSideOutput(lateOutputTag)
+    lateStream
+  }
+
 }
 
 
