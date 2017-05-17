@@ -9,13 +9,13 @@ import com.datastax.driver.core.exceptions.DriverException
 import com.keedio.flink.cep.alerts.ErrorAlert
 import com.keedio.flink.cep.patterns.ErrorAlertCreateVMPattern
 import com.keedio.flink.cep.{IAlert, IAlertPattern}
+import com.keedio.flink.config.FlinkProperties
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
 import com.keedio.flink.utils._
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
-import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
@@ -41,88 +41,34 @@ object OpenStackLogProcessor {
   val LOG: Logger = Logger.getLogger(classOf[OpenStackLogProcessor])
 
   def main(args: Array[String]): Unit = {
-    //From the command line arguments
-    if (args.isEmpty) new RuntimeException("Arguments for job cannot be empty")
-    val parameterToolCli: ParameterTool = ParameterTool.fromArgs(args)
-    val parameterToolFromFile: ParameterTool = parameterToolCli.getProperties.propertyNames().asScala.toSeq.contains("properties.file") match {
-      case true => ParameterTool.fromPropertiesFile(parameterToolCli.get("properties.file"))
-      case false => parameterToolCli
-    }
-    //val parameterToolFromFile: ParameterTool = ParameterTool.fromPropertiesFile(propertiesFile)
-    val CASSANDRAPORT = ProcessorHelper.getValueFromProperties(parameterToolCli, "cassandra.port",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "cassandra.port", "9042"))
-    //val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
-
-    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromProperties(parameterToolCli, "restart.attempts",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.strategy.restart.attempts", "3")).toInt
-    //val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
-
-    //val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
-    val RESTART_DELAY = ProcessorHelper.getValueFromProperties(parameterToolFromFile, "restart.delay",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.strategy.restart.delay", "10")).toInt
-
-    //val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
-    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromProperties(parameterToolCli, "maxOutOfOrderness",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.assginerTimestamp.maxOutOfOrderness", "0")).toLong
-
-    val CHECKPOINT_INTERVAL = ProcessorHelper.getValueFromProperties(parameterToolCli, "checkpointInterval",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.checkpointing.interval", "100000")).toLong
-
-    val PARSEBODY: Boolean = ProcessorHelper.getValueFromProperties(parameterToolCli, "parseBody",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.parse.body", "true")).toBoolean
-
-    val CASSANDRAHOST = ProcessorHelper.getValueFromProperties(parameterToolCli, "cassandra.host",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "cassandra.host", "disabled"))
-
-    val SOURCE_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-source",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "source-topic", ""))
-
-    val TARGET_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-target",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "target-topic", ""))
-
-    val BOOSTRAP_SERVERS = ProcessorHelper.getValueFromProperties(parameterToolCli, "bootstrap.servers",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "bootstrap.servers", "127.0.0.1:9092"))
-
-    val ZOOKEEPER_CONNECT = ProcessorHelper.getValueFromProperties(parameterToolCli, "zookeeper.connect",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "zookeeper.connect", "127.0.0.1:2181"))
-
-    val GROUP_ID: String = ProcessorHelper.getValueFromProperties(parameterToolCli, "group.id",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "group.id", "myGroup"))
-
-    val AUTO_OFFSET_RESET = ProcessorHelper.getValueFromProperties(parameterToolCli, "auto.offset.reset",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "auto.offset.reset", "latest"))
-
-    val BROKER = ProcessorHelper.getValueFromProperties(parameterToolCli, "broker",
-      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
-
-    val parameterTool: ParameterTool = parameterToolCli.mergeWith(parameterToolFromFile)
+   val flinkProperties = new FlinkProperties(args)
+    val properties: flinkProperties.FlinkProperties.type = flinkProperties.FlinkProperties
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.enableCheckpointing(CHECKPOINT_INTERVAL)
+    env.enableCheckpointing(properties.CHECKPOINT_INTERVAL)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
-    env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
-      RESTART_ATTEMPTS,
-      org.apache.flink.api.common.time.Time.of(RESTART_DELAY, TimeUnit.MINUTES)
+    env.setRestartStrategy(RestartStrategies.fixedDelayRestart(properties.RESTART_ATTEMPTS,
+      org.apache.flink.api.common.time.Time.of(properties.RESTART_DELAY, TimeUnit.MINUTES)
     ))
     // Use the Measurement Timestamp of the Event (set a notion of time)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
-      SOURCE_TOPIC, new SimpleStringSchema(), parameterTool.getProperties)
+      properties.SOURCE_TOPIC, new SimpleStringSchema(), properties.parameterTool.getProperties)
 
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s, PARSEBODY))
+      .map(s => LogEntry(s, properties.PARSEBODY))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
 
     //assign and emit watermarks: events may arrive unordered
     val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
-      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(MAXOUTOFORDENESS)) {
+      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
       .setParallelism(1)
@@ -146,7 +92,7 @@ object OpenStackLogProcessor {
 
 
     //SINKING to Cassandra
-    isCassandraSinkEnbled(CASSANDRAHOST, CASSANDRAPORT) match {
+    isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
       case true => {
         listNodeCounter.foreach(t => {
           CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
@@ -155,8 +101,8 @@ object OpenStackLogProcessor {
             .setClusterBuilder(new ClusterBuilder() {
               override def buildCluster(builder: Builder): Cluster = {
                 builder
-                  .addContactPoint(CASSANDRAHOST)
-                  .withPort(CASSANDRAPORT.toInt)
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
                   .build()
               }
             })
@@ -175,8 +121,8 @@ object OpenStackLogProcessor {
             .setClusterBuilder(new ClusterBuilder() {
               override def buildCluster(builder: Builder): Cluster = {
                 builder
-                  .addContactPoint(CASSANDRAHOST)
-                  .withPort(CASSANDRAPORT.toInt)
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
                   .build()
               }
             })
@@ -195,8 +141,8 @@ object OpenStackLogProcessor {
             .setClusterBuilder(new ClusterBuilder() {
               override def buildCluster(builder: Builder): Cluster = {
                 builder
-                  .addContactPoint(CASSANDRAHOST)
-                  .withPort(CASSANDRAPORT.toInt)
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
                   .build()
               }
             })
@@ -209,8 +155,8 @@ object OpenStackLogProcessor {
           .setClusterBuilder(new ClusterBuilder() {
             override def buildCluster(builder: Builder): Cluster = {
               builder
-                .addContactPoint(CASSANDRAHOST)
-                .withPort(CASSANDRAPORT.toInt)
+                .addContactPoint(properties.CASSANDRAHOST)
+                .withPort(properties.CASSANDRAPORT.toInt)
                 .build()
             }
           })
@@ -222,8 +168,7 @@ object OpenStackLogProcessor {
     //CEP
     val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
-    val myProducer = new FlinkKafkaProducer08[String](
-      BROKER, TARGET_TOPIC, new SimpleStringSchema())
+    val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
     myProducer.setFlushOnCheckpoint(false) // "false" by default
@@ -232,8 +177,8 @@ object OpenStackLogProcessor {
     streamErrorString.addSink(myProducer)
 
     //properties of job client
-    val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
-    val propertiesList: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
+    val propertiesNames = properties.parameterTool.getProperties.propertyNames().asScala.toSeq
+    val propertiesList: Seq[String] = propertiesNames.map(key => s" ${key}  : " + properties.parameterTool.getProperties.getProperty(key.toString))
 
     try {
       env.execute(s"OpensStack Log Processor - " + propertiesList.mkString(";"))
