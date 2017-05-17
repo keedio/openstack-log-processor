@@ -103,7 +103,7 @@ object ProcessorHelper {
     * @param default
     * @return
     */
-  def getValueFromArgs(parameterTool: ParameterTool, key: String, default: String): String = {
+  def getValueFromProperties(parameterTool: ParameterTool, key: String, default: String): String = {
     parameterTool.has(key) match {
       case true => Option(parameterTool.get(key)) match {
         case Some(value) => value match {

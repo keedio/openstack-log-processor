@@ -55,11 +55,11 @@ class ProcessorHelperTest {
   def testGetValueFromArgs() = {
     val mapForParameterTool1= Map("other.key1" -> "valueforkey1", "other.key2" -> "valuesforkey2").asJava
     val parameterTool1 = ParameterTool.fromMap(mapForParameterTool1)
-    Assert.assertEquals(ProcessorHelper.getValueFromArgs(parameterTool1, "cassandra.port", "9042").toInt, 9042)
+    Assert.assertEquals(ProcessorHelper.getValueFromProperties(parameterTool1, "cassandra.port", "9042").toInt, 9042)
 
     val mapForParameterTool2= Map("cassandra.port" -> "", "other.key1" -> "valueforkey1", "other.key2" -> "valuesforkey2").asJava
     val parameterTool2 = ParameterTool.fromMap(mapForParameterTool2)
-    Assert.assertEquals(ProcessorHelper.getValueFromArgs(parameterTool2, "cassandra.port", "9042").toInt, 9042)
+    Assert.assertEquals(ProcessorHelper.getValueFromProperties(parameterTool2, "cassandra.port", "9042").toInt, 9042)
 
   }
 

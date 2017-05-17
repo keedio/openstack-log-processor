@@ -42,55 +42,58 @@ object OpenStackLogProcessor {
 
   def main(args: Array[String]): Unit = {
     //From the command line arguments
-
+    if (args.isEmpty) new RuntimeException("Arguments for job cannot be empty")
     val parameterToolCli: ParameterTool = ParameterTool.fromArgs(args)
-    val propertiesFile: String = parameterToolCli.get("properties.file")
-    val parameterToolFromFile: ParameterTool = ParameterTool.fromPropertiesFile(propertiesFile)
-    val CASSANDRAPORT = ProcessorHelper.getValueFromArgs(parameterToolCli,"cassandra.port",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "cassandra.port", "9042"))
+    val parameterToolFromFile: ParameterTool = parameterToolCli.getProperties.propertyNames().asScala.toSeq.contains("properties.file") match {
+      case true => ParameterTool.fromPropertiesFile(parameterToolCli.get("properties.file"))
+      case false => parameterToolCli
+    }
+    //val parameterToolFromFile: ParameterTool = ParameterTool.fromPropertiesFile(propertiesFile)
+    val CASSANDRAPORT = ProcessorHelper.getValueFromProperties(parameterToolCli, "cassandra.port",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "cassandra.port", "9042"))
     //val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
 
-    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterToolCli, "restart.attempts",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.strategy.restart.attempts", "3")).toInt
+    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromProperties(parameterToolCli, "restart.attempts",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.strategy.restart.attempts", "3")).toInt
     //val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
 
     //val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
-    val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterToolFromFile, "restart.delay",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.strategy.restart.delay", "10")).toInt
+    val RESTART_DELAY = ProcessorHelper.getValueFromProperties(parameterToolFromFile, "restart.delay",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.strategy.restart.delay", "10")).toInt
 
     //val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
-    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterToolCli, "maxOutOfOrderness",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.assginerTimestamp.maxOutOfOrderness", "0")).toLong
+    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromProperties(parameterToolCli, "maxOutOfOrderness",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.assginerTimestamp.maxOutOfOrderness", "0")).toLong
 
-    val CHECKPOINT_INTERVAL = ProcessorHelper.getValueFromArgs(parameterToolCli, "checkpointInterval",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.checkpointing.interval", "100000")).toLong
+    val CHECKPOINT_INTERVAL = ProcessorHelper.getValueFromProperties(parameterToolCli, "checkpointInterval",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.checkpointing.interval", "100000")).toLong
 
-    val PARSEBODY: Boolean = ProcessorHelper.getValueFromArgs(parameterToolCli, "parseBody",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.parse.body", "true")).toBoolean
+    val PARSEBODY: Boolean = ProcessorHelper.getValueFromProperties(parameterToolCli, "parseBody",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "flink.parse.body", "true")).toBoolean
 
-    val CASSANDRAHOST = ProcessorHelper.getValueFromArgs(parameterToolCli, "cassandra.host",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "cassandra.host", ""))
+    val CASSANDRAHOST = ProcessorHelper.getValueFromProperties(parameterToolCli, "cassandra.host",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "cassandra.host", "disabled"))
 
-    val SOURCE_TOPIC = ProcessorHelper.getValueFromArgs(parameterToolCli, "topic-source",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "source-topic", ""))
+    val SOURCE_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-source",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "source-topic", ""))
 
-    val TARGET_TOPIC = ProcessorHelper.getValueFromArgs(parameterToolCli, "topic-target",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "target-topic", ""))
+    val TARGET_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-target",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "target-topic", ""))
 
-    val BOOSTRAP_SERVERS = ProcessorHelper.getValueFromArgs(parameterToolCli, "bootstrap.servers",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "bootstrap.servers", "127.0.0.1:9092"))
+    val BOOSTRAP_SERVERS = ProcessorHelper.getValueFromProperties(parameterToolCli, "bootstrap.servers",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "bootstrap.servers", "127.0.0.1:9092"))
 
-    val ZOOKEEPER_CONNECT = ProcessorHelper.getValueFromArgs(parameterToolCli, "zookeeper.connect",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "zookeeper.connect", "127.0.0.1:2181"))
+    val ZOOKEEPER_CONNECT = ProcessorHelper.getValueFromProperties(parameterToolCli, "zookeeper.connect",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "zookeeper.connect", "127.0.0.1:2181"))
 
-    val GROUP_ID: String = ProcessorHelper.getValueFromArgs(parameterToolCli, "group.id",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "group.id", "myGroup"))
+    val GROUP_ID: String = ProcessorHelper.getValueFromProperties(parameterToolCli, "group.id",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "group.id", "myGroup"))
 
-    val AUTO_OFFSET_RESET = ProcessorHelper.getValueFromArgs(parameterToolCli, "auto.offset.reset",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "auto.offset.reset", "latest"))
+    val AUTO_OFFSET_RESET = ProcessorHelper.getValueFromProperties(parameterToolCli, "auto.offset.reset",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "auto.offset.reset", "latest"))
 
-    val BROKER = ProcessorHelper.getValueFromArgs(parameterToolCli, "broker",
-      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
+    val BROKER = ProcessorHelper.getValueFromProperties(parameterToolCli, "broker",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
 
     val parameterTool: ParameterTool = parameterToolCli.mergeWith(parameterToolFromFile)
 
@@ -142,8 +145,7 @@ object OpenStackLogProcessor {
       logEntryToTupleRL(streamOfLogs, "boston")
 
 
-
-    //SINKING
+    //SINKING to Cassandra
     isCassandraSinkEnbled(CASSANDRAHOST, CASSANDRAPORT) match {
       case true => {
         listNodeCounter.foreach(t => {
@@ -214,10 +216,8 @@ object OpenStackLogProcessor {
           })
           .build()
       }
-      case false => LOG.info(s"Sinking to Cassandra DB is disabled by ${propertiesFile} ")
+      case false => LOG.info(s"Sinking to Cassandra DB is disabled.")
     }
-
-
 
     //CEP
     val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
@@ -227,6 +227,8 @@ object OpenStackLogProcessor {
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
     myProducer.setFlushOnCheckpoint(false) // "false" by default
+
+    //sinking to kafka
     streamErrorString.addSink(myProducer)
 
     //properties of job client
@@ -337,7 +339,7 @@ object OpenStackLogProcessor {
 
 
   def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
-    cassandraHost != "disabled" || cassandraPort != "disabled"
+    cassandraHost != "disabled" && cassandraPort != "disabled"
   }
 
 }
