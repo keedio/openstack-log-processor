@@ -42,14 +42,60 @@ object OpenStackLogProcessor {
 
   def main(args: Array[String]): Unit = {
     //From the command line arguments
-    val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
-    val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
-    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
-    val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
-    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
+
+    val parameterToolCli: ParameterTool = ParameterTool.fromArgs(args)
+    val propertiesFile: String = parameterToolCli.get("properties.file")
+    val parameterToolFromFile: ParameterTool = ParameterTool.fromPropertiesFile(propertiesFile)
+    val CASSANDRAPORT = ProcessorHelper.getValueFromArgs(parameterToolCli,"cassandra.port",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "cassandra.port", "9042"))
+    //val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
+
+    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterToolCli, "restart.attempts",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.strategy.restart.attempts", "3")).toInt
+    //val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
+
+    //val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
+    val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterToolFromFile, "restart.delay",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.strategy.restart.delay", "10")).toInt
+
+    //val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
+    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterToolCli, "maxOutOfOrderness",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.assginerTimestamp.maxOutOfOrderness", "0")).toLong
+
+    val CHECKPOINT_INTERVAL = ProcessorHelper.getValueFromArgs(parameterToolCli, "checkpointInterval",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.checkpointing.interval", "100000")).toLong
+
+    val PARSEBODY: Boolean = ProcessorHelper.getValueFromArgs(parameterToolCli, "parseBody",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "flink.parse.body", "true")).toBoolean
+
+    val CASSANDRAHOST = ProcessorHelper.getValueFromArgs(parameterToolCli, "cassandra.host",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "cassandra.host", ""))
+
+    val SOURCE_TOPIC = ProcessorHelper.getValueFromArgs(parameterToolCli, "topic-source",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "source-topic", ""))
+
+    val TARGET_TOPIC = ProcessorHelper.getValueFromArgs(parameterToolCli, "topic-target",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "target-topic", ""))
+
+    val BOOSTRAP_SERVERS = ProcessorHelper.getValueFromArgs(parameterToolCli, "bootstrap.servers",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "bootstrap.servers", "127.0.0.1:9092"))
+
+    val ZOOKEEPER_CONNECT = ProcessorHelper.getValueFromArgs(parameterToolCli, "zookeeper.connect",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "zookeeper.connect", "127.0.0.1:2181"))
+
+    val GROUP_ID: String = ProcessorHelper.getValueFromArgs(parameterToolCli, "group.id",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "group.id", "myGroup"))
+
+    val AUTO_OFFSET_RESET = ProcessorHelper.getValueFromArgs(parameterToolCli, "auto.offset.reset",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "auto.offset.reset", "latest"))
+
+    val BROKER = ProcessorHelper.getValueFromArgs(parameterToolCli, "broker",
+      ProcessorHelper.getValueFromArgs(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
+
+    val parameterTool: ParameterTool = parameterToolCli.mergeWith(parameterToolFromFile)
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.enableCheckpointing(100000)
+    env.enableCheckpointing(CHECKPOINT_INTERVAL)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
     env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
       RESTART_ATTEMPTS,
@@ -60,13 +106,13 @@ object OpenStackLogProcessor {
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
-      parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
+      SOURCE_TOPIC, new SimpleStringSchema(), parameterTool.getProperties)
 
     val stream: DataStream[String] = env.addSource(kafkaConsumer)
 
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s, parameterTool.getBoolean("parseBody", true)))
+      .map(s => LogEntry(s, PARSEBODY))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
@@ -95,92 +141,100 @@ object OpenStackLogProcessor {
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
       logEntryToTupleRL(streamOfLogs, "boston")
 
+
+
     //SINKING
-    listNodeCounter.foreach(t => {
-      CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
-        ".counters_nodes (id, loglevel, az, " +
-        "region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
-
-    listServiceCounter.foreach(t => {
-      CassandraSink.addSink(t._1.javaStream).setQuery(
-        "INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, " +
-          "?," +
-          " " +
-          "?," +
-          " " +
-          "?, " +
-          "?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
-
-    /**
-      * COLS:   |  id    |service|  loglevel|  region| ts   | tfhours   | timeframe| TTL(hiden)
-      * VALUES: |  ?     | ?     |    ?     |    ?   | now()|    ?      |    ?     |    ?
-      * TUPLE:  | timekey|service|  loglevel|  region|      | timestamp | timeframe|    ttl
-      */
-    listStackService.foreach(t => {
-      CassandraSink.addSink(t.javaStream).setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, " +
-        "service, ts, " +
-        "timeframe, " + "tfHours)" + " " + "VALUES " + "(?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
-
-    CassandraSink.addSink(rawLog.javaStream).setQuery(
-      "INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) " +
-        "VALUES " + "(?, ?, ?, ?, ?, ?, ?);")
-      .setClusterBuilder(new ClusterBuilder() {
-        override def buildCluster(builder: Builder): Cluster = {
-          builder
-            .addContactPoint(parameterTool.getRequired("cassandra.host"))
-            .withPort(CASSANDRAPORT)
+    isCassandraSinkEnbled(CASSANDRAHOST, CASSANDRAPORT) match {
+      case true => {
+        listNodeCounter.foreach(t => {
+          CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
+            ".counters_nodes (id, loglevel, az, " +
+            "region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(CASSANDRAHOST)
+                  .withPort(CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
             .build()
-        }
-      })
-      .build()
+        })
+
+        listServiceCounter.foreach(t => {
+          CassandraSink.addSink(t._1.javaStream).setQuery(
+            "INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, " +
+              "?," +
+              " " +
+              "?," +
+              " " +
+              "?, " +
+              "?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(CASSANDRAHOST)
+                  .withPort(CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
+            .build()
+        })
+
+        /**
+          * COLS:   |  id    |service|  loglevel|  region| ts   | tfhours   | timeframe| TTL(hiden)
+          * VALUES: |  ?     | ?     |    ?     |    ?   | now()|    ?      |    ?     |    ?
+          * TUPLE:  | timekey|service|  loglevel|  region|      | timestamp | timeframe|    ttl
+          */
+        listStackService.foreach(t => {
+          CassandraSink.addSink(t.javaStream).setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, " +
+            "service, ts, " +
+            "timeframe, " + "tfHours)" + " " + "VALUES " + "(?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(CASSANDRAHOST)
+                  .withPort(CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
+            .build()
+        })
+
+        CassandraSink.addSink(rawLog.javaStream).setQuery(
+          "INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) " +
+            "VALUES " + "(?, ?, ?, ?, ?, ?, ?);")
+          .setClusterBuilder(new ClusterBuilder() {
+            override def buildCluster(builder: Builder): Cluster = {
+              builder
+                .addContactPoint(CASSANDRAHOST)
+                .withPort(CASSANDRAPORT.toInt)
+                .build()
+            }
+          })
+          .build()
+      }
+      case false => LOG.info(s"Sinking to Cassandra DB is disabled by ${propertiesFile} ")
+    }
+
 
 
     //CEP
     val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
     val myProducer = new FlinkKafkaProducer08[String](
-      parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
+      BROKER, TARGET_TOPIC, new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
-    myProducer.setFlushOnCheckpoint(false) // "false" by defaultF
+    myProducer.setFlushOnCheckpoint(false) // "false" by default
     streamErrorString.addSink(myProducer)
 
     //properties of job client
     val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
-    val listPropertiesFromCli: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
+    val propertiesList: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
 
     try {
-      env.execute(s"OpensStack Log Processor - " + listPropertiesFromCli.mkString(";"))
+      env.execute(s"OpensStack Log Processor - " + propertiesList.mkString(";"))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
@@ -279,6 +333,11 @@ object OpenStackLogProcessor {
 
     val lateStream: DataStream[LogEntry] = tempPatternStream.getSideOutput(lateOutputTag)
     lateStream
+  }
+
+
+  def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
+    cassandraHost != "disabled" || cassandraPort != "disabled"
   }
 
 }
