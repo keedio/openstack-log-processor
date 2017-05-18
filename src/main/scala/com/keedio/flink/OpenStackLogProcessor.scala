@@ -41,8 +41,8 @@ object OpenStackLogProcessor {
   val LOG: Logger = Logger.getLogger(classOf[OpenStackLogProcessor])
 
   def main(args: Array[String]): Unit = {
-   val flinkProperties = new FlinkProperties(args)
-    val properties: flinkProperties.FlinkProperties.type = flinkProperties.FlinkProperties
+    lazy val flinkProperties = new FlinkProperties(args)
+    lazy val properties: flinkProperties.FlinkProperties.type = flinkProperties.FlinkProperties
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
     env.enableCheckpointing(properties.CHECKPOINT_INTERVAL)
@@ -181,7 +181,7 @@ object OpenStackLogProcessor {
     val propertiesList: Seq[String] = propertiesNames.map(key => s" ${key}  : " + properties.parameterTool.getProperties.getProperty(key.toString))
 
     try {
-      env.execute(s"OpensStack Log Processor - " + propertiesList.mkString(";"))
+      env.execute(s"OpensStack Log Processor - " + propertiesList.mkString("  ;  "))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
