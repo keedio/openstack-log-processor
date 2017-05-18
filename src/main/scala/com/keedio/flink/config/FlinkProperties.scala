@@ -41,7 +41,7 @@ class FlinkProperties(args: Array[String]) extends Serializable{
     lazy val CASSANDRAHOST = ProcessorHelper.getValueFromProperties(parameterToolCli, "cassandra.host",
       ProcessorHelper.getValueFromProperties(parameterToolFromFile, "cassandra.host", "disabled"))
 
-    lazy val SOURCE_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-source",
+    lazy val SOURCE_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "source-topic",
       ProcessorHelper.getValueFromProperties(parameterToolFromFile, "source-topic", ""))
 
     lazy val TARGET_TOPIC = ProcessorHelper.getValueFromProperties(parameterToolCli, "topic-target",
@@ -62,7 +62,7 @@ class FlinkProperties(args: Array[String]) extends Serializable{
     lazy val BROKER = ProcessorHelper.getValueFromProperties(parameterToolCli, "broker",
       ProcessorHelper.getValueFromProperties(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
 
-    lazy val parameterTool: ParameterTool = parameterToolCli.mergeWith(parameterToolFromFile)
+    lazy val parameterTool: ParameterTool = parameterToolFromFile.mergeWith(parameterToolCli)
   }
 
 }
