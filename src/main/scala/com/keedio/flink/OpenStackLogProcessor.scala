@@ -57,7 +57,7 @@ object OpenStackLogProcessor {
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
       properties.SOURCE_TOPIC, new SimpleStringSchema(), properties.parameterTool.getProperties)
 
-    val stream: DataStream[String] = env.addSource(kafkaConsumer)
+    val stream: DataStream[String] = env.addSource(kafkaConsumer).rebalance
 
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
@@ -67,7 +67,9 @@ object OpenStackLogProcessor {
       .rebalance
 
     //assign and emit watermarks: events may arrive unordered
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
+          //.keyBy(_.service)
+      .assignTimestampsAndWatermarks(
       new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
