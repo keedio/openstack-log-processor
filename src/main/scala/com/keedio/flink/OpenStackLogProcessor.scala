@@ -9,13 +9,13 @@ import com.datastax.driver.core.exceptions.DriverException
 import com.keedio.flink.cep.alerts.ErrorAlert
 import com.keedio.flink.cep.patterns.ErrorAlertCreateVMPattern
 import com.keedio.flink.cep.{IAlert, IAlertPattern}
+import com.keedio.flink.config.FlinkProperties
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
 import com.keedio.flink.utils._
 import org.apache.flink.api.common.restartstrategy.RestartStrategies
 import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
-import org.apache.flink.api.java.utils.ParameterTool
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
@@ -41,39 +41,36 @@ object OpenStackLogProcessor {
   val LOG: Logger = Logger.getLogger(classOf[OpenStackLogProcessor])
 
   def main(args: Array[String]): Unit = {
-    //From the command line arguments
-    val parameterTool: ParameterTool = ParameterTool.fromArgs(args)
-    val CASSANDRAPORT: Int = ProcessorHelper.getValueFromArgs(parameterTool, "cassandra.port", "9042").toInt
-    val RESTART_ATTEMPTS = ProcessorHelper.getValueFromArgs(parameterTool, "restart.attempts", "3").toInt
-    val RESTART_DELAY = ProcessorHelper.getValueFromArgs(parameterTool, "restart.delay", "10").toInt
-    val MAXOUTOFORDENESS = ProcessorHelper.getValueFromArgs(parameterTool, "maxOutOfOrderness", "0").toLong
+    lazy val flinkProperties = new FlinkProperties(args)
+    lazy val properties: flinkProperties.FlinkProperties.type = flinkProperties.FlinkProperties
 
     val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.enableCheckpointing(100000)
+    env.enableCheckpointing(properties.CHECKPOINT_INTERVAL)
     env.getCheckpointConfig.setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE)
-    env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
-      RESTART_ATTEMPTS,
-      org.apache.flink.api.common.time.Time.of(RESTART_DELAY, TimeUnit.MINUTES)
+    env.setRestartStrategy(RestartStrategies.fixedDelayRestart(properties.RESTART_ATTEMPTS,
+      org.apache.flink.api.common.time.Time.of(properties.RESTART_DELAY, TimeUnit.MINUTES)
     ))
     // Use the Measurement Timestamp of the Event (set a notion of time)
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
 
     //source of data is Kafka. We subscribe as consumer via connector FlinkKafkaConsumer08
     val kafkaConsumer: FlinkKafkaConsumer08[String] = new FlinkKafkaConsumer08[String](
-      parameterTool.getRequired("topic"), new SimpleStringSchema(), parameterTool.getProperties)
+      properties.SOURCE_TOPIC, new SimpleStringSchema(), properties.parameterTool.getProperties)
 
-    val stream: DataStream[String] = env.addSource(kafkaConsumer)
+    val stream: DataStream[String] = env.addSource(kafkaConsumer).rebalance
 
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s, parameterTool.getBoolean("parseBody", true)))
+      .map(s => LogEntry(s, properties.PARSEBODY))
       .filter(logEntry => logEntry.isValid())
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
 
     //assign and emit watermarks: events may arrive unordered
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
-      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(MAXOUTOFORDENESS)) {
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
+          //.keyBy(_.service)
+      .assignTimestampsAndWatermarks(
+      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
       .setParallelism(1)
@@ -95,92 +92,98 @@ object OpenStackLogProcessor {
     val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
       logEntryToTupleRL(streamOfLogs, "boston")
 
-    //SINKING
-    listNodeCounter.foreach(t => {
-      CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
-        ".counters_nodes (id, loglevel, az, " +
-        "region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
 
-    listServiceCounter.foreach(t => {
-      CassandraSink.addSink(t._1.javaStream).setQuery(
-        "INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, " +
-          "?," +
-          " " +
-          "?," +
-          " " +
-          "?, " +
-          "?, now()) USING TTL " + t._2 + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
-
-    /**
-      * COLS:   |  id    |service|  loglevel|  region| ts   | tfhours   | timeframe| TTL(hiden)
-      * VALUES: |  ?     | ?     |    ?     |    ?   | now()|    ?      |    ?     |    ?
-      * TUPLE:  | timekey|service|  loglevel|  region|      | timestamp | timeframe|    ttl
-      */
-    listStackService.foreach(t => {
-      CassandraSink.addSink(t.javaStream).setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, " +
-        "service, ts, " +
-        "timeframe, " + "tfHours)" + " " + "VALUES " + "(?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
-        .setClusterBuilder(new ClusterBuilder() {
-          override def buildCluster(builder: Builder): Cluster = {
-            builder
-              .addContactPoint(parameterTool.getRequired("cassandra.host"))
-              .withPort(CASSANDRAPORT)
-              .build()
-          }
-        })
-        .build()
-    })
-
-    CassandraSink.addSink(rawLog.javaStream).setQuery(
-      "INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) " +
-        "VALUES " + "(?, ?, ?, ?, ?, ?, ?);")
-      .setClusterBuilder(new ClusterBuilder() {
-        override def buildCluster(builder: Builder): Cluster = {
-          builder
-            .addContactPoint(parameterTool.getRequired("cassandra.host"))
-            .withPort(CASSANDRAPORT)
+    //SINKING to Cassandra
+    isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
+      case true => {
+        listNodeCounter.foreach(t => {
+          CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
+            ".counters_nodes (id, loglevel, az, " +
+            "region, node_type, ts) VALUES (?, ?, ?, ?, ?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
             .build()
-        }
-      })
-      .build()
+        })
 
+        listServiceCounter.foreach(t => {
+          CassandraSink.addSink(t._1.javaStream).setQuery(
+            "INSERT INTO redhatpoc.counters_services (id, loglevel, az, region, service, ts) VALUES (?, " +
+              "?," +
+              " " +
+              "?," +
+              " " +
+              "?, " +
+              "?, now()) USING TTL " + t._2 + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
+            .build()
+        })
+
+        /**
+          * COLS:   |  id    |service|  loglevel|  region| ts   | tfhours   | timeframe| TTL(hiden)
+          * VALUES: |  ?     | ?     |    ?     |    ?   | now()|    ?      |    ?     |    ?
+          * TUPLE:  | timekey|service|  loglevel|  region|      | timestamp | timeframe|    ttl
+          */
+        listStackService.foreach(t => {
+          CassandraSink.addSink(t.javaStream).setQuery("INSERT INTO redhatpoc.stack_services (id, region, loglevel, " +
+            "service, ts, " +
+            "timeframe, " + "tfHours)" + " " + "VALUES " + "(?,?,?,?, now(),?,?) USING TTL " + "?" + ";")
+            .setClusterBuilder(new ClusterBuilder() {
+              override def buildCluster(builder: Builder): Cluster = {
+                builder
+                  .addContactPoint(properties.CASSANDRAHOST)
+                  .withPort(properties.CASSANDRAPORT.toInt)
+                  .build()
+              }
+            })
+            .build()
+        })
+
+        CassandraSink.addSink(rawLog.javaStream).setQuery(
+          "INSERT INTO redhatpoc.raw_logs (date, region, loglevel, service, node_type, log_ts, payload) " +
+            "VALUES " + "(?, ?, ?, ?, ?, ?, ?);")
+          .setClusterBuilder(new ClusterBuilder() {
+            override def buildCluster(builder: Builder): Cluster = {
+              builder
+                .addContactPoint(properties.CASSANDRAHOST)
+                .withPort(properties.CASSANDRAPORT.toInt)
+                .build()
+            }
+          })
+          .build()
+      }
+      case false => LOG.info(s"Sinking to Cassandra DB is disabled.")
+    }
 
     //CEP
     val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
     val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
-    val myProducer = new FlinkKafkaProducer08[String](
-      parameterTool.getRequired("broker"), parameterTool.getRequired("target-topic"), new SimpleStringSchema())
+    val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
-    myProducer.setFlushOnCheckpoint(false) // "false" by defaultF
+    myProducer.setFlushOnCheckpoint(false) // "false" by default
+
+    //sinking to kafka
     streamErrorString.addSink(myProducer)
 
     //properties of job client
-    val propertiesNames = parameterTool.getProperties.propertyNames().asScala.toSeq
-    val listPropertiesFromCli: Seq[String] = propertiesNames.map(key => s" ${key}  : " + parameterTool.getProperties.getProperty(key.toString))
+    val propertiesNames = properties.parameterTool.getProperties.propertyNames().asScala.toSeq
+    val propertiesList: Seq[String] = propertiesNames.map(key => s" ${key}  : " + properties.parameterTool.getProperties.getProperty(key.toString))
 
     try {
-      env.execute(s"OpensStack Log Processor - " + listPropertiesFromCli.mkString(";"))
+      env.execute(s"OpensStack Log Processor - " + propertiesList.mkString("  ;  "))
     } catch {
       case e: DriverException => LOG.error("", e)
     }
@@ -279,6 +282,11 @@ object OpenStackLogProcessor {
 
     val lateStream: DataStream[LogEntry] = tempPatternStream.getSideOutput(lateOutputTag)
     lateStream
+  }
+
+
+  def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
+    cassandraHost != "disabled" && cassandraPort != "disabled"
   }
 
 }
