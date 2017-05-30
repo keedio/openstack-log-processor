@@ -62,40 +62,33 @@ object OpenStackLogProcessor {
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
       .map(s => LogEntry(s, properties.PARSEBODY))
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
+      .filter(logEntry => logEntry.isValid() && SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))) //.disableChaining()
       .rebalance
 
-    //assign and emit watermarks: events may arrive unordered
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
-          //.keyBy(_.service)
-      .assignTimestampsAndWatermarks(
-      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
-        override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-      })
-      .setParallelism(1)
-
-    //will populate tables basis on column id : 1h, 6h, ...
-    val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
-      604800, "1m" -> 2419200)
-
-    //Create a stream of data for each id and map that stream to a specific flink.tuple.
-    val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (logEntryToTupleNC(streamOfLogs, e._1, "az1", "boston"), e._2))
-
-    val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-      .map(e => (logEntryToTupleSC(streamOfLogs, e._1, "az1", "boston"), e._2))
-
-    val listStackService: Iterable[DataStream[Tuple7[String, String, String, String, Int, String, Int]]] = listOfKeys
-      .map(e => logEntryToTupleSS(streamOfLogs, e._1, e._2, "boston"))
-
-    val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
-      logEntryToTupleRL(streamOfLogs, "boston")
-
+//    stream.rebalance.writeAsText("file:///var/tmp/stream.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
+//    streamOfLogs.rebalance.writeAsText("file:///var/tmp/streamOfLogs.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
 
     //SINKING to Cassandra
     isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
       case true => {
+        //will populate tables basis on column id : 1h, 6h, ...
+        val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
+          604800, "1m" -> 2419200)
+
+        //Create a stream of data for each id and map that stream to a specific flink.tuple.
+        val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
+          .map(e => (logEntryToTupleNC(streamOfLogs, e._1, "az1", "boston"), e._2))
+
+        val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
+          .map(e => (logEntryToTupleSC(streamOfLogs, e._1, "az1", "boston"), e._2))
+
+        val listStackService: Iterable[DataStream[Tuple7[String, String, String, String, Int, String, Int]]] = listOfKeys
+          .map(e => logEntryToTupleSS(streamOfLogs, e._1, e._2, "boston"))
+
+        val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
+          logEntryToTupleRL(streamOfLogs.rebalance, "boston")
+
+        //sinking to cassandra
         listNodeCounter.foreach(t => {
           CassandraSink.addSink(t._1.javaStream).setQuery("INSERT INTO redhatpoc" +
             ".counters_nodes (id, loglevel, az, " +
@@ -167,16 +160,24 @@ object OpenStackLogProcessor {
       case false => LOG.info(s"Sinking to Cassandra DB is disabled.")
     }
 
+
+    //assign and emit watermarks: events may arrive unordered
+    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
+      .assignTimestampsAndWatermarks(
+        new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
+          override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+        })
+      .setParallelism(1)
     //CEP
     val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
-    val streamErrorString: DataStream[String] = streamOfErrorAlerts.map(errorAlert => errorAlert.toString).setParallelism(1)
+    val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString)
     val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
     // the following is necessary for at-least-once delivery guarantee
     myProducer.setLogFailuresOnly(false) // "false" by default
     myProducer.setFlushOnCheckpoint(false) // "false" by default
-
     //sinking to kafka
     streamErrorString.addSink(myProducer)
+
 
     //properties of job client
     val propertiesNames = properties.parameterTool.getProperties.propertyNames().asScala.toSeq
@@ -284,10 +285,10 @@ object OpenStackLogProcessor {
     lateStream
   }
 
-
   def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
     cassandraHost != "disabled" && cassandraPort != "disabled"
   }
+
 
 }
 
