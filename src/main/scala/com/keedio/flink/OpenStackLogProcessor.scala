@@ -66,9 +66,6 @@ object OpenStackLogProcessor {
       .filter(logEntry => logEntry.isValid() && SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
 
-//    stream.rebalance.writeAsText("file:///var/tmp/stream.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
-//    streamOfLogs.rebalance.writeAsText("file:///var/tmp/streamOfLogs.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
-
     //SINKING to Cassandra
     isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
       case true => {
@@ -263,26 +260,15 @@ object OpenStackLogProcessor {
     * @tparam T
     * @return
     */
-//  def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
-//                                (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
-//    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
-//      alertPattern.getEventPattern())
-//    val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
-//      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
-//    })
-//    alerts
-//  }
   def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
                                 (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
     val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
       alertPattern.getEventPattern())
     val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
-//      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
       override def select(pattern: util.Map[String, util.List[LogEntry]]): T = alertPattern.create(pattern)
     })
     alerts
   }
-
 
 
   def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
