@@ -62,6 +62,9 @@ class FlinkProperties(args: Array[String]) extends Serializable {
     lazy val BROKER = ProcessorHelper.getValueFromProperties(parameterToolCli, "broker",
       ProcessorHelper.getValueFromProperties(parameterToolFromFile, "broker", BOOSTRAP_SERVERS))
 
+    lazy val ENABLE_CEP = ProcessorHelper.getValueFromProperties(parameterToolCli, "enable.cep",
+      ProcessorHelper.getValueFromProperties(parameterToolFromFile, "enable.cep", "true")).toBoolean
+
     //properties form cli will override properties from file. Elemenst from right operand owerwrite elemenst of
     //left one
     lazy val mapOfParameters = parameterToolFromFile.getProperties.asScala.toSeq.toMap ++
