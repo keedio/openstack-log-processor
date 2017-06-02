@@ -20,7 +20,7 @@ trait IAlertPattern[TEventType, TAlertType <: IAlert] extends Serializable{
     * @param pattern Pattern, with has been match by Apache flink
     * @return the alert created from the given match result
     */
-  def create(pattern: java.util.Map[String, TEventType]): TAlertType
+  def create(pattern: java.util.Map[String, java.util.List[TEventType]]): TAlertType
 
   /**
     * Implements the apache flink Cep Event Pattern which triggers an alert.
