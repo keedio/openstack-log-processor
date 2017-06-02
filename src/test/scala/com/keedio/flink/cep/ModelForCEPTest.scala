@@ -6,7 +6,6 @@ import com.keedio.flink.cep.patterns.{ErrorAlertCreateVMPattern, ErrorAlertPatte
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.utils._
 import org.apache.flink.api.scala.createTypeInformation
-import org.apache.flink.core.fs.FileSystem
 import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.streaming.api.functions.timestamps.{AscendingTimestampExtractor, BoundedOutOfOrdernessTimestampExtractor}
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
@@ -262,33 +261,5 @@ class ModelForCEPTest {
     Assert.assertNotNull(env.execute())
   }
 
-  @Test
-  def toLateElemenetsStreamsTest = {
-    val tmp = System.getProperty("java.io.tmpdir")
-    val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
-    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime)
-    val stream: DataStream[String] = env.readTextFile("./src/test/resources/randomJsonsFile2.txt")
-    val streamOfLogs: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s))
-      .filter(logEntry => logEntry.isValid())
-      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
-    streamOfLogs.rebalance.print
-
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs.assignTimestampsAndWatermarks(
-      new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(0)) {
-        override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-      })
-
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
-    alerts.rescale.print()
-
-    val lateElements: DataStream[LogEntry] = toLateElementsStream("late-elements", streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
-    lateElements.rebalance.print
-    lateElements.rebalance.writeAsText(tmp + "lateElements.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
-    alerts.rebalance.writeAsText(tmp + "alerts.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
-    println(tmp + "alerts.txt")
-    println(env.getExecutionPlan)
-    Assert.assertNotNull(env.execute())
-  }
 
 }
