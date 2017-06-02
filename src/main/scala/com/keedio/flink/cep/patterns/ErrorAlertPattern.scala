@@ -14,9 +14,9 @@ import org.apache.flink.streaming.api.windowing.time.Time
   */
 class ErrorAlertPattern extends IAlertPattern[LogEntry, ErrorAlert] {
 
-  override def create(pattern: java.util.Map[String, LogEntry]): ErrorAlert = {
-    val first: LogEntry = pattern.get("First Event")
-    val second: LogEntry = pattern.get("Second Event")
+  override def create(pattern: java.util.Map[String, java.util.List[LogEntry]]): ErrorAlert = {
+    val first: LogEntry = pattern.get("First Event").get(0)
+    val second: LogEntry = pattern.get("Second Event").get(0)
     new ErrorAlert(first, second)
   }
 

@@ -1,6 +1,7 @@
 package com.keedio.flink
 
 import java.sql.Timestamp
+import java.util
 import java.util.concurrent.TimeUnit
 
 import com.datastax.driver.core.Cluster
@@ -62,7 +63,7 @@ object OpenStackLogProcessor {
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
       .map(s => LogEntry(s, properties.PARSEBODY))
-      .filter(logEntry => logEntry.isValid() && SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))) //.disableChaining()
+      .filter(logEntry => logEntry.isValid() && SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
       .rebalance
 
 //    stream.rebalance.writeAsText("file:///var/tmp/stream.txt", FileSystem.WriteMode.OVERWRITE).setParallelism(1)
@@ -160,23 +161,28 @@ object OpenStackLogProcessor {
       case false => LOG.info(s"Sinking to Cassandra DB is disabled.")
     }
 
+    properties.ENABLE_CEP match {
+      case false => LOG.info(s"CEP is disabled")
+      case true => {
+        //assign and emit watermarks: events may arrive unordered
+        val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
+          .assignTimestampsAndWatermarks(
+            new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
+              override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
+            })
+          .setParallelism(1)
+        //CEP
+        val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+        val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString)
+        val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
+        // the following is necessary for at-least-once delivery guarantee
+        myProducer.setLogFailuresOnly(false) // "false" by default
+        myProducer.setFlushOnCheckpoint(false) // "false" by default
+        //sinking to kafka
+        streamErrorString.addSink(myProducer)
+      }
+    }
 
-    //assign and emit watermarks: events may arrive unordered
-    val streamOfLogsTimestamped: DataStream[LogEntry] = streamOfLogs
-      .assignTimestampsAndWatermarks(
-        new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(properties.MAXOUTOFORDENESS)) {
-          override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
-        })
-      .setParallelism(1)
-    //CEP
-    val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
-    val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString)
-    val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
-    // the following is necessary for at-least-once delivery guarantee
-    myProducer.setLogFailuresOnly(false) // "false" by default
-    myProducer.setFlushOnCheckpoint(false) // "false" by default
-    //sinking to kafka
-    streamErrorString.addSink(myProducer)
 
 
     //properties of job client
@@ -257,33 +263,27 @@ object OpenStackLogProcessor {
     * @tparam T
     * @return
     */
+//  def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
+//                                (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
+//    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
+//      alertPattern.getEventPattern())
+//    val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
+//      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
+//    })
+//    alerts
+//  }
   def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
                                 (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
     val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
       alertPattern.getEventPattern())
     val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
-      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
+//      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
+      override def select(pattern: util.Map[String, util.List[LogEntry]]): T = alertPattern.create(pattern)
     })
     alerts
   }
 
-  /**
-    * Generate DataStream of late elements
-    */
-  def toLateElementsStream[T <: IAlert](tag: String, streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
-                                       (implicit typeInfo: TypeInformation[T]): DataStream[LogEntry] = {
-    val lateOutputTag: OutputTag[LogEntry] = new OutputTag[LogEntry](tag)
-    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
-      alertPattern.getEventPattern())
-      .sideOutputLateData(lateOutputTag)
 
-    val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
-      override def select(map: java.util.Map[String, LogEntry]): T = alertPattern.create(map)
-    })
-
-    val lateStream: DataStream[LogEntry] = tempPatternStream.getSideOutput(lateOutputTag)
-    lateStream
-  }
 
   def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
     cassandraHost != "disabled" && cassandraPort != "disabled"

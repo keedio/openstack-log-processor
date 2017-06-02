@@ -7,8 +7,6 @@ import com.keedio.flink.utils.SyslogCode
 import org.apache.flink.cep.scala.pattern.Pattern
 import org.apache.flink.streaming.api.windowing.time.Time
 
-import scala.collection.JavaConverters._
-
 /**
   * Created by luislazaro on 26/4/17.
   * lalazaro@keedio.com
@@ -16,9 +14,9 @@ import scala.collection.JavaConverters._
   */
 class ErrorAlertCreateVMPattern extends IAlertPattern[LogEntry, ErrorAlert] {
 
-  override def create(pattern: java.util.Map[String, LogEntry]): ErrorAlert = {
-    val first: LogEntry = pattern.get("First Event")
-    val second: LogEntry = pattern.get("Second Event")
+  override def create(pattern: java.util.Map[String, java.util.List[LogEntry]]): ErrorAlert = {
+    val first: LogEntry = pattern.get("First Event").get(0)
+    val second: LogEntry = pattern.get("Second Event").get(0)
     new ErrorAlert(first, second)
   }
 
@@ -42,7 +40,7 @@ class ErrorAlertCreateVMPattern extends IAlertPattern[LogEntry, ErrorAlert] {
       .where(event => event.body.contains("CEP_ID"))
       .where(
         (event, ctx) => {
-          val matches: Seq[LogEntry] = ctx.getEventsForPattern("First Event").asScala.toSeq.filter(_.body.contains("CEP_ID="))
+          val matches: Seq[LogEntry] = ctx.getEventsForPattern("First Event").toSeq.filter(_.body.contains("CEP_ID="))
           matches.exists(logEntry => logEntry.body.split("CEP_ID=")(1).split("\\s+")(0) == event.body.split("CEP_ID=")(1).split("\\s+")(0))
         }
       )
