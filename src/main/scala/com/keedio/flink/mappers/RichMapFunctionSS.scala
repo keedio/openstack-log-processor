@@ -30,6 +30,7 @@ class RichMapFunctionSS(val timeKey: String, val valKey: Int, val region: String
   override def open(configuration: Configuration) = {
     this.counter = getRuntimeContext
       .getMetricGroup
+      .addGroup("MyMetrics")
       .counter("Total_LogEntry_To_Stack_Services")
   }
 

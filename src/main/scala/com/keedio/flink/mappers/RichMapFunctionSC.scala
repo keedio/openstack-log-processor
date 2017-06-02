@@ -28,6 +28,7 @@ extends RichMapFunction[LogEntry, Tuple5[String, String, String, String, String]
   override def open(configuration: Configuration) = {
     this.counter = getRuntimeContext
       .getMetricGroup
+      .addGroup("MyMetrics")
       .counter("myCounter_service_counter")
   }
 }

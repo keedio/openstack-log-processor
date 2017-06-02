@@ -34,6 +34,7 @@ class RichMapFunctionRL(val region: String) extends RichMapFunction[LogEntry, Tu
   override def open(configuration: Configuration) = {
     this.counter = getRuntimeContext()
       .getMetricGroup
+      .addGroup("MyMetrics")
       .counter("raw_log_LogEntryToTuple")
   }
 }

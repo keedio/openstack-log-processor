@@ -27,6 +27,7 @@ class RichMapFunctionNC(val timeKey: String, val az: String, val region: String)
   override def open(configuration: Configuration) = {
     this.counter = getRuntimeContext
       .getMetricGroup
+      .addGroup("MyMetrics")
       .counter("myCounter_node_counter")
   }
 
