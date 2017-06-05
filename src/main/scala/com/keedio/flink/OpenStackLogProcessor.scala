@@ -19,6 +19,7 @@ import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
+import org.apache.flink.core.fs.FileSystem
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
 import org.apache.flink.streaming.api.windowing.time.Time
@@ -62,9 +63,13 @@ object OpenStackLogProcessor {
 
     //parse jsones as logentries
     val streamOfLogs: DataStream[LogEntry] = stream
-      .map(s => LogEntry(s, properties.PARSEBODY))
-      .filter(logEntry => logEntry.isValid() && SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity)))
+      .map(s => LogEntry(s, properties.PARSEBODY)).name("map: toLogEntry" + "\n")
+      .filter(logEntry => logEntry.isValid()).name("filter: validity" + "\n")
+      .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).name("filter: severity" + "\n")
       .rebalance
+
+    streamOfLogs.rebalance.writeAsText("file:///var/tmp/streamOfLogs.txt", FileSystem.WriteMode.OVERWRITE)
+      .setParallelism(1).name("writeAsText: file:///var/tmp/streamOfLogs.txt" + "\n")
 
     //SINKING to Cassandra
     isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
@@ -75,16 +80,16 @@ object OpenStackLogProcessor {
 
         //Create a stream of data for each id and map that stream to a specific flink.tuple.
         val listNodeCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-          .map(e => (logEntryToTupleNC(streamOfLogs, e._1, "az1", "boston"), e._2))
+          .map(e => (logEntryToTupleNC(streamOfLogs.rebalance, e._1, "az1", "boston"), e._2))
 
         val listServiceCounter: Map[DataStream[Tuple5[String, String, String, String, String]], Int] = listOfKeys
-          .map(e => (logEntryToTupleSC(streamOfLogs, e._1, "az1", "boston"), e._2))
+          .map(e => (logEntryToTupleSC(streamOfLogs.rebalance, e._1, "az1", "boston"), e._2))
 
         val listStackService: Iterable[DataStream[Tuple7[String, String, String, String, Int, String, Int]]] = listOfKeys
-          .map(e => logEntryToTupleSS(streamOfLogs, e._1, e._2, "boston"))
+          .map(e => logEntryToTupleSS(streamOfLogs.rebalance, e._1, e._2, "boston"))
 
         val rawLog: DataStream[Tuple7[String, String, String, String, String, Timestamp, String]] =
-          logEntryToTupleRL(streamOfLogs.rebalance, "boston")
+          logEntryToTupleRL(streamOfLogs.rebalance.rebalance, "boston")
 
         //sinking to cassandra
         listNodeCounter.foreach(t => {
@@ -100,6 +105,7 @@ object OpenStackLogProcessor {
               }
             })
             .build()
+            .name("counters_nodes " + t._2)
         })
 
         listServiceCounter.foreach(t => {
@@ -120,6 +126,7 @@ object OpenStackLogProcessor {
               }
             })
             .build()
+            .name("counters_services " + t._2)
         })
 
         /**
@@ -140,6 +147,7 @@ object OpenStackLogProcessor {
               }
             })
             .build()
+            .name("stack_services")
         })
 
         CassandraSink.addSink(rawLog.javaStream).setQuery(
@@ -154,6 +162,7 @@ object OpenStackLogProcessor {
             }
           })
           .build()
+          .name("raw_logs")
       }
       case false => LOG.info(s"Sinking to Cassandra DB is disabled.")
     }
@@ -169,17 +178,16 @@ object OpenStackLogProcessor {
             })
           .setParallelism(1)
         //CEP
-        val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
-        val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString)
+        val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern).name("toAlertStream")
+        val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString).name("map: ErrorAlertToString").disableChaining()
         val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
         // the following is necessary for at-least-once delivery guarantee
         myProducer.setLogFailuresOnly(false) // "false" by default
         myProducer.setFlushOnCheckpoint(false) // "false" by default
         //sinking to kafka
-        streamErrorString.addSink(myProducer)
+        streamErrorString.addSink(myProducer).name("toKafkaProducer")
       }
     }
-
 
 
     //properties of job client
@@ -205,7 +213,7 @@ object OpenStackLogProcessor {
   def logEntryToTupleNC(
                          streamOfLogs: DataStream[LogEntry], timeKey: String, az: String,
                          region: String): DataStream[Tuple5[String, String, String, String, String]] = {
-    streamOfLogs.map(new RichMapFunctionNC(timeKey, az, region))
+    streamOfLogs.map(new RichMapFunctionNC(timeKey, az, region)).name("map: RichMapFunctionNC " + timeKey.toString + "\n")
   }
 
   /**
@@ -219,7 +227,7 @@ object OpenStackLogProcessor {
     */
   def logEntryToTupleSC(streamOfLogs: DataStream[LogEntry], timeKey: String, az: String, region: String):
   DataStream[Tuple5[String, String, String, String, String]] = {
-    streamOfLogs.map(new RichMapFunctionSC(timeKey, az, region))
+    streamOfLogs.map(new RichMapFunctionSC(timeKey, az, region))name("map: RichMapFunctionSC " + timeKey.toString + "\n")
   }
 
   /**
@@ -231,7 +239,7 @@ object OpenStackLogProcessor {
     */
   def logEntryToTupleRL(streamOfLogs: DataStream[LogEntry], region: String): DataStream[Tuple7[String, String,
     String, String, String, Timestamp, String]] = {
-    streamOfLogs.map(new RichMapFunctionRL(region))
+    streamOfLogs.map(new RichMapFunctionRL(region)).name("map: RichMapFunctionRL " + "\n")
   }
 
   /**
@@ -246,9 +254,9 @@ object OpenStackLogProcessor {
   def logEntryToTupleSS(streamOfLogs: DataStream[LogEntry], timeKey: String, valKey: Int, region: String):
   DataStream[Tuple7[String, String, String, String, Int, String, Int]] = {
     streamOfLogs
-      .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey))
-      .map(new RichMapFunctionSS(timeKey, valKey, region))
-      .filter(t => t.f6 > 0)
+      .filter(logEntry => ProcessorHelper.isValidPeriodTime(logEntry.timestamp, valKey)).name("filter: validPeriodTime" + "\n")
+      .map(new RichMapFunctionSS(timeKey, valKey, region)).name("map: RichMapFunctionSS " + timeKey.toString + "\n")
+      .filter(t => t.f6 > 0).name("filter: ttl greater than zero" + "\n")
   }
 
   /**
