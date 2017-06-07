@@ -7,9 +7,9 @@ import java.util.concurrent.TimeUnit
 import com.datastax.driver.core.Cluster
 import com.datastax.driver.core.Cluster.Builder
 import com.datastax.driver.core.exceptions.DriverException
-import com.keedio.flink.cep.alerts.ErrorAlert
-import com.keedio.flink.cep.patterns.ErrorAlertCreateVMPattern
-import com.keedio.flink.cep.{IAlert, IAlertPattern}
+import com.keedio.flink.cep.alerts.Alert
+import com.keedio.flink.cep.patterns.ErrorCreateVMPattern
+import com.keedio.flink.cep.{IAlert, IPattern}
 import com.keedio.flink.config.FlinkProperties
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.mappers._
@@ -178,7 +178,7 @@ object OpenStackLogProcessor {
             })
           .setParallelism(1)
         //CEP
-        val streamOfErrorAlerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern).name("toAlertStream")
+        val streamOfErrorAlerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorCreateVMPattern).name("toAlertStream")
         val streamErrorString: DataStream[String] = streamOfErrorAlerts.rebalance.map(errorAlert => errorAlert.toString).name("map: ErrorAlertToString").disableChaining()
         val myProducer = new FlinkKafkaProducer08[String](properties.BROKER, properties.TARGET_TOPIC, new SimpleStringSchema())
         // the following is necessary for at-least-once delivery guarantee
@@ -268,12 +268,12 @@ object OpenStackLogProcessor {
     * @tparam T
     * @return
     */
-  def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IAlertPattern[LogEntry, T])
+  def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IPattern[LogEntry, T])
                                 (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
     val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,
       alertPattern.getEventPattern())
     val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
-      override def select(pattern: util.Map[String, util.List[LogEntry]]): T = alertPattern.create(pattern)
+      override def select(pattern: util.Map[String, util.List[LogEntry]]): T = alertPattern.createAlert(pattern)
     })
     alerts
   }

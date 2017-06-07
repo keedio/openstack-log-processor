@@ -1,7 +1,7 @@
 package com.keedio.flink.cep.patterns
 
-import com.keedio.flink.cep.IAlertPattern
-import com.keedio.flink.cep.alerts.ErrorAlert
+import com.keedio.flink.cep.IPattern
+import com.keedio.flink.cep.alerts.Alert
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.utils.SyslogCode
 import org.apache.flink.cep.scala.pattern.Pattern
@@ -12,12 +12,12 @@ import org.apache.flink.streaming.api.windowing.time.Time
   * lalazaro@keedio.com
   * Keedio
   */
-class ErrorAlertCreateVMPattern extends IAlertPattern[LogEntry, ErrorAlert] {
+class ErrorCreateVMPattern extends IPattern[LogEntry, Alert] {
 
-  override def create(pattern: java.util.Map[String, java.util.List[LogEntry]]): ErrorAlert = {
+  override def createAlert(pattern: java.util.Map[String, java.util.List[LogEntry]]): Alert = {
     val first: LogEntry = pattern.get("First Event").get(0)
     val second: LogEntry = pattern.get("Second Event").get(0)
-    new ErrorAlert(first, second)
+    new Alert(first, second)
   }
 
   /**

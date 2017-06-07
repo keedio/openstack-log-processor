@@ -1,8 +1,8 @@
 package com.keedio.flink.cep
 
 import com.keedio.flink.OpenStackLogProcessor._
-import com.keedio.flink.cep.alerts.ErrorAlert
-import com.keedio.flink.cep.patterns.{ErrorAlertCreateVMPattern, ErrorAlertPattern}
+import com.keedio.flink.cep.alerts.Alert
+import com.keedio.flink.cep.patterns.{ErrorCreateVMPattern, ErrorPattern}
 import com.keedio.flink.entities.LogEntry
 import com.keedio.flink.utils._
 import org.apache.flink.api.scala.createTypeInformation
@@ -24,7 +24,7 @@ import scala.collection.immutable.Seq
   */
 class ModelForCEPTest {
 
-  def mapOfAsserts(alertsStream: DataStream[ErrorAlert]): Unit = {
+  def mapOfAsserts(alertsStream: DataStream[Alert]): Unit = {
     alertsStream.map(alert => {
       //if alert is generated, must be belong to the same service.
       Assert.assertTrue(alert.logEntry0.service == alert.logEntry1.service)
@@ -37,7 +37,7 @@ class ModelForCEPTest {
 
       //logentries must have the same severity
       Assert.assertEquals(SyslogCode(alert.logEntry0.severity), SyslogCode(alert.logEntry1.severity))
-      Assert.assertTrue(alert.isInstanceOf[ErrorAlert])
+      Assert.assertTrue(alert.isInstanceOf[Alert])
       Assert.assertNotSame(alert.logEntry0, alert.logEntry1)
       Assert.assertNotEquals(alert.logEntry0, alert.logEntry1)
       Assert.assertTrue(alert.logEntry0.id != alert.logEntry1.id)
@@ -68,7 +68,7 @@ class ModelForCEPTest {
           }
         }).keyBy(_.service)
 
-      val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+      val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorPattern)
 
       alerts.rebalance.print
       mapOfAsserts(alerts)
@@ -120,7 +120,7 @@ class ModelForCEPTest {
         }
       }).keyBy(_.service)
 
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+    val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorPattern)
 
     alerts.rebalance.print
     mapOfAsserts(alerts)
@@ -160,7 +160,7 @@ class ModelForCEPTest {
         }
       }).keyBy(_.service)
 
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+    val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorPattern)
     alerts.rebalance.print
     mapOfAsserts(alerts)
     Assert.assertNotNull(env.execute())
@@ -181,7 +181,7 @@ class ModelForCEPTest {
           }
         }).keyBy(_.service)
 
-      val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertPattern)
+      val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorPattern)
       alerts.rebalance.print
       mapOfAsserts(alerts)
       Assert.assertNotNull(env.execute())
@@ -209,7 +209,7 @@ class ModelForCEPTest {
         }
       }) //.keyBy(_.service)
 
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorCreateVMPattern)
     alerts.rebalance.print
 
     //    mapOfAsserts(alerts)
@@ -232,7 +232,7 @@ class ModelForCEPTest {
         }
       }) //.keyBy(_.service)
 
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorCreateVMPattern)
     alerts.rebalance.print
 
     //    mapOfAsserts(alerts)
@@ -256,7 +256,7 @@ class ModelForCEPTest {
       new BoundedOutOfOrdernessTimestampExtractor[LogEntry](Time.seconds(0)) {
         override def extractTimestamp(t: LogEntry): Long = ProcessorHelper.toTimestamp(t.timestamp).getTime
       })
-    val alerts: DataStream[ErrorAlert] = toAlertStream(streamOfLogsTimestamped, new ErrorAlertCreateVMPattern)
+    val alerts: DataStream[Alert] = toAlertStream(streamOfLogsTimestamped, new ErrorCreateVMPattern)
     alerts.rebalance.print
     Assert.assertNotNull(env.execute())
   }

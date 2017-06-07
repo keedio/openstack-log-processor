@@ -13,14 +13,14 @@ import org.apache.flink.cep.scala.pattern.Pattern
   * @tparam TEventType
   * @tparam TAlertType
   */
-trait IAlertPattern[TEventType, TAlertType <: IAlert] extends Serializable{
+trait IPattern[TEventType, TAlertType <: IAlert] extends Serializable{
 
   /**
     * Implements the mapping between the pattern matching result and the alert.
     * @param pattern Pattern, with has been match by Apache flink
     * @return the alert created from the given match result
     */
-  def create(pattern: java.util.Map[String, java.util.List[TEventType]]): TAlertType
+  def createAlert(pattern: java.util.Map[String, java.util.List[TEventType]]): TAlertType
 
   /**
     * Implements the apache flink Cep Event Pattern which triggers an alert.

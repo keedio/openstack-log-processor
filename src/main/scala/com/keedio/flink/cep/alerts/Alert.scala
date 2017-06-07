@@ -13,10 +13,10 @@ import com.keedio.flink.entities.LogEntry
   * @param logEntry0
   * @param logEntry1
   */
-class ErrorAlert(val logEntry0: LogEntry, val logEntry1: LogEntry) extends IAlert{
+class Alert(val logEntry0: LogEntry, val logEntry1: LogEntry) extends IAlert{
 
   override def toString: String = {
-   "ErrorAlert: " + "\n" + logEntry0.service +"-"+ logEntry0.severity+"-"+logEntry0.timestamp  + "\n" +
+   "Alert: " + "\n" + logEntry0.service +"-"+ logEntry0.severity+"-"+logEntry0.timestamp  + "\n" +
      logEntry1.service +"-"+ logEntry1.severity+"-"+logEntry1.timestamp + "\n" +
     logEntry0 + "\n" + logEntry1 + "\n"
   }
@@ -24,12 +24,12 @@ class ErrorAlert(val logEntry0: LogEntry, val logEntry1: LogEntry) extends IAler
     logEntry.toString
   }
 
-  def getAlertName = "ErrorAlert"
+  def getAlertName = "Alert"
 
-  def canEqual(other: Any): Boolean = other.isInstanceOf[ErrorAlert]
+  def canEqual(other: Any): Boolean = other.isInstanceOf[Alert]
 
   override def equals(other: Any): Boolean = other match {
-    case that: ErrorAlert =>
+    case that: Alert =>
       (that canEqual this) &&
         logEntry0 == that.logEntry0 &&
         logEntry1 == that.logEntry1
