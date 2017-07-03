@@ -44,7 +44,7 @@ class ErrorCreateVMPattern extends IPattern[LogEntry, Alert] {
           matches.exists(logEntry => logEntry.body.split("CEP_ID=")(1).split("\\s+")(0) == event.body.split("CEP_ID=")(1).split("\\s+")(0))
         }
       )
-      .within(Time.minutes(10))
+      .within(Time.seconds(10))
   }
 
 

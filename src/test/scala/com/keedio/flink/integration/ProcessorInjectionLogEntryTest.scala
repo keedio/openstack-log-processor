@@ -42,6 +42,7 @@ class ProcessorInjectionLogEntryTest {
   val embeddedCassandraServer = new EmbeddedCassandraServer("redhatpoc.cql", "redhatpoc")
   val session = embeddedCassandraServer.getSession
   val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+  env.setParallelism(1)
   val listOfKeys: Map[String, Int] = Map("1h" -> 3600, "6h" -> 21600, "12h" -> 43200, "24h" -> 86400, "1w" ->
     604800, "1m" -> 2419200)
   val listOfTimestamps: Seq[String] = generateTimestamps()

@@ -19,7 +19,6 @@ import org.apache.flink.api.common.typeinfo.TypeInformation
 import org.apache.flink.api.java.tuple._
 import org.apache.flink.cep.PatternSelectFunction
 import org.apache.flink.cep.scala.{CEP, PatternStream}
-import org.apache.flink.core.fs.FileSystem
 import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrdernessTimestampExtractor
 import org.apache.flink.streaming.api.scala.{createTypeInformation, _}
 import org.apache.flink.streaming.api.windowing.time.Time
@@ -31,7 +30,6 @@ import org.apache.log4j.Logger
 
 import scala.collection.JavaConverters._
 import scala.collection.Map
-
 /**
   * Created by luislazaro on 8/2/17.
   * lalazaro@keedio.com
@@ -68,8 +66,8 @@ object OpenStackLogProcessor {
       .filter(logEntry => SyslogCode.acceptedLogLevels.contains(SyslogCode(logEntry.severity))).name("filter: severity" + "\n")
       .rebalance
 
-    streamOfLogs.rebalance.writeAsText("file:///var/tmp/streamOfLogs.txt", FileSystem.WriteMode.OVERWRITE)
-      .setParallelism(1).name("writeAsText: file:///var/tmp/streamOfLogs.txt" + "\n")
+//    streamOfLogs.rebalance.writeAsText("file:///var/tmp/streamOfLogs.txt", FileSystem.WriteMode.OVERWRITE)
+//      .setParallelism(1).name("writeAsText: file:///var/tmp/streamOfLogs.txt" + "\n")
 
     //SINKING to Cassandra
     isCassandraSinkEnbled(properties.CASSANDRAHOST, properties.CASSANDRAPORT) match {
@@ -267,6 +265,8 @@ object OpenStackLogProcessor {
     * @param typeInfo
     * @tparam T
     * @return
+    * The type information will be generated at the sites where the method is invoked,
+    * rather than where the method is defined.
     */
   def toAlertStream[T <: IAlert](streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IPattern[LogEntry, T])
                                 (implicit typeInfo: TypeInformation[T]): DataStream[T] = {
@@ -282,7 +282,22 @@ object OpenStackLogProcessor {
   def isCassandraSinkEnbled(cassandraHost: String, cassandraPort: String): Boolean = {
     cassandraHost != "disabled" && cassandraPort != "disabled"
   }
-
+//  /**
+//    * Generate DataStream of late elements
+//    */
+//  def toLateElementsStream[T <: IAlert](tag: String, streamOfLogsTimestamped: DataStream[LogEntry], alertPattern: IPattern[LogEntry, T])
+//                                       (implicit typeInfo: TypeInformation[T]): DataStream[LogEntry] = {
+//    val lateOutputTag: OutputTag[LogEntry] = new OutputTag[LogEntry](tag)
+//    val tempPatternStream: PatternStream[LogEntry] = CEP.pattern(streamOfLogsTimestamped,alertPattern.getEventPattern())
+//
+//
+//    val alerts: DataStream[T] = tempPatternStream.select(new PatternSelectFunction[LogEntry, T] {
+//      override def select(pattern: util.Map[String, util.List[LogEntry]]): T  = alertPattern.createAlert(pattern)
+//    })
+//
+//    val lateStream: DataStream[LogEntry] = tempPatternStream.getSideOutput(lateOutputTag)
+//    lateStream
+//  }
 
 }
 
